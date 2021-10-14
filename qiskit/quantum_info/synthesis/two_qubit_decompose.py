@@ -26,6 +26,7 @@ arXiv:1811.12926 [quant-ph] (2018).
 import cmath
 import math
 import io
+import itertools
 import base64
 import warnings
 from typing import ClassVar, Optional, Type
@@ -46,6 +47,80 @@ from qiskit.quantum_info.synthesis.one_qubit_decompose import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _partition_eigenvalues(eigenvalues, atol):
+    """Group the indices of degenerate eigenvalues."""
+    groups = []
+    for i, eigenvalue in enumerate(eigenvalues):
+        for group in groups:
+            for other in group:
+                if abs(eigenvalue - eigenvalues[other]) > atol:
+                    break
+            else:
+                group.append(i)
+                break
+        else:
+            groups.append([i])
+    return groups
+
+
+def _remove_global_phase(vector, index=None):
+    """Rotate the vector by the negative argument of the largest absolute element."""
+    absolute = np.abs(vector)
+    index = np.argmax(absolute) if index is None else index
+    return (vector[index] / absolute[index]).conjugate() * vector
+
+
+def _diagonalize_unitary_complex_symmetric(U, atol=1e-13):
+    """Diagonalize the unitary complex-symmetric ``U`` with a complex diagonal matrix and a
+    real-symmetric unitary matrix (in SO(4))."""
+    import scipy.linalg
+
+    eigenvalues, eigenvectors = scipy.linalg.eig(U)
+    eigenvalues /= np.abs(eigenvalues)
+    # First find the degenerate subspaces, in order of dimension.
+    spaces = sorted(_partition_eigenvalues(eigenvalues, atol=atol), key=len)
+    if len(spaces) == 1:
+        return eigenvalues, np.eye(4)
+    out_vectors = np.empty((4, 4), dtype=np.float64)
+    n_done = 0
+    while n_done < 4 and len(spaces[n_done]) == 1:
+        # 1D spaces must be only a global phase away from being real.
+        out_vectors[:, n_done] = _remove_global_phase(eigenvectors[:, spaces[n_done][0]]).real
+        n_done += 1
+    if n_done == 0:
+        # Two 2D spaces. This is the hardest case, because we might not have even one real vector.
+        a, b = eigenvectors[:, spaces[0]].T
+        b_zeros = np.abs(b) <= atol
+        if np.any(np.abs(a[b_zeros]) > atol):
+            # Make `a` real where `b` has zeros.
+            a = _remove_global_phase(a, index=np.argmax(np.where(b_zeros, np.abs(a), 0)))
+        if np.max(np.abs(a.imag)) <= atol:
+            # `a` is already all real.
+            pass
+        else:
+            # We have to solve `(b.imag, b.real) @ (re, im).T = a.imag` for `re`
+            # and `im`, which is overspecified.
+            multiplier, *_ = scipy.linalg.lstsq(np.transpose([b.imag, b.real]), a.imag)
+            a = a - complex(*multiplier) * b
+        a = a.real / scipy.linalg.norm(a.real)
+        b = _remove_global_phase(b - (a @ b) * a)
+        out_vectors[:, :2] = np.transpose([a, b.real])
+        n_done = 2
+    # There can be at most one eigenspace not yet made real.  Since the whole vector basis is
+    # orthogonal, the remaining space is equivalent to the null space of what we've got so far.
+    if n_done < 4:
+        out_vectors[:, n_done:] = scipy.linalg.null_space(out_vectors[:, :n_done].T)
+    # We assigned in space-dimension order, so we have to permute back to input order.
+    permutation = [None] * 4
+    for i, x in enumerate(itertools.chain(*spaces)):
+        permutation[x] = i
+    out_vectors = out_vectors[:, permutation]
+    # One extra orthogonalization to improve the overall tolerance, and ensure our minor floating
+    # point twiddles haven't let us stray from normalisation.
+    out_vectors, _ = scipy.linalg.qr(out_vectors)
+    return eigenvalues, out_vectors
 
 
 def decompose_two_qubit_product_gate(special_unitary_matrix):
@@ -144,7 +219,7 @@ class TwoQubitWeylDecomposition:
 
         The overall decomposition scheme is taken from Drury and Love, arXiv:0806.4015 [quant-ph].
         """
-        from scipy import linalg as la
+        import scipy.linalg
 
         pi = np.pi
         pi2 = np.pi / 2
@@ -152,39 +227,13 @@ class TwoQubitWeylDecomposition:
 
         # Make U be in SU(4)
         U = np.array(unitary_matrix, dtype=complex, copy=True)
-        detU = la.det(U)
+        detU = scipy.linalg.det(U)
         U *= detU ** (-0.25)
         global_phase = cmath.phase(detU) / 4
 
         Up = transform_to_magic_basis(U, reverse=True)
         M2 = Up.T.dot(Up)
-
-        # M2 is a symmetric complex matrix. We need to decompose it as M2 = P D P^T where
-        # P ∈ SO(4), D is diagonal with unit-magnitude elements.
-        #
-        # We can't use raw `eig` directly because it isn't guaranteed to give us real or othogonal
-        # eigenvectors.  Instead, since `M2` is complex-symmetric,
-        #   M2 = A + iB
-        # for real-symmetric `A` and `B`, and as
-        #   M2^+ @ M2 = A^2 + B^2 + i [A, B] = 1
-        # we must have `A` and `B` commute, and consequently they are simultaneously diagonalizable.
-        # Mixing them together _should_ account for any degeneracy problems, but it's not
-        # guaranteed, so we repeat it a little bit.  The fixed seed is to make failures
-        # deterministic; the value is not important.
-        state = np.random.default_rng(2020)
-        for _ in range(100):  # FIXME: this randomized algorithm is horrendous
-            M2real = state.normal() * M2.real + state.normal() * M2.imag
-            _, P = np.linalg.eigh(M2real)
-            D = P.T.dot(M2).dot(P).diagonal()
-            if np.allclose(P.dot(np.diag(D)).dot(P.T), M2, rtol=0, atol=1.0e-13):
-                break
-        else:
-            raise QiskitError(
-                "TwoQubitWeylDecomposition: failed to diagonalize M2."
-                " Please report this at https://github.com/Qiskit/qiskit-terra/issues/4159."
-                f" Input: {U.tolist()}"
-            )
-
+        D, P = _diagonalize_unitary_complex_symmetric(M2)
         d = -np.angle(D) / 2
         d[3] = -d[0] - d[1] - d[2]
         cs = np.mod((d[:3] + d[3]) / 2, 2 * np.pi)
@@ -198,7 +247,7 @@ class TwoQubitWeylDecomposition:
         P[:, :3] = P[:, order]
 
         # Fix the sign of P to be in SO(4)
-        if np.real(la.det(P)) < 0:
+        if np.real(scipy.linalg.det(P)) < 0:
             P[:, -1] = -P[:, -1]
 
         # Find K1, K2 so that U = K1.A.K2, with K being product of single-qubit unitaries
