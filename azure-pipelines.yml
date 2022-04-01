@@ -4,17 +4,17 @@ trigger:
   tags:
     include: ["*"]
   branches:
-    include: ["main", "stable/*"]
+    include: ["azure-test"]
 
 pr:
   branches:
-    include: ["*"]
+    include: ["azure-test"]
 
 schedules:
-  - cron: "20 6 * * *"
+  - cron: "45 * * * *"
     displayName: "Complete matrix test"
     branches:
-      include: [ "main", "stable/*" ]
+      include: ["azure-test"]
     always: false  # Only run if the code changed since the last cron sync.
 
 
@@ -56,6 +56,15 @@ parameters:
 # stage in turn delegates to various templates in ".azure" that provide the
 # information on "how to run" them.
 stages:
+  - stage: "Dump_Info"
+    pool: Default
+    jobs:
+      - job: Dump
+        steps:
+          - bash: |
+              echo "Reason: ${{ variables['Build.Reason'] }}"
+              echo "Source: ${{ variables['Build.SourceBranch'] }}"
+
   # Nightly cron job.
   - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
     - stage: "Nightly"
@@ -67,14 +76,6 @@ stages:
               pythonVersion: ${{ version }}
               testQPY: false
               testImages: false
-
-          - template: ".azure/test-macos.yml"
-            parameters:
-              pythonVersion: ${{ version }}
-
-          - template: ".azure/test-windows.yml"
-            parameters:
-              pythonVersion: ${{ version }}
 
   # Full PR suite.
   - ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
@@ -96,7 +97,7 @@ stages:
 
         - template: ".azure/test-linux.yml"
           parameters:
-            pythonVersion: ${{ parameters.minimumPythonVersion }}
+            pythonVersion: ${{ parameters.maximumPythonVersion }}
             testQPY: false
             testImages: false
 
@@ -119,22 +120,6 @@ stages:
             testQPY: true
             testImages: true
 
-        - template: ".azure/test-macos.yml"
-          parameters:
-            pythonVersion: ${{ parameters.minimumPythonVersion }}
-
-        - template: ".azure/test-macos.yml"
-          parameters:
-            pythonVersion: ${{ parameters.maximumPythonVersion }}
-
-        - template: ".azure/test-windows.yml"
-          parameters:
-            pythonVersion: ${{ parameters.minimumPythonVersion }}
-
-        - template: ".azure/test-windows.yml"
-          parameters:
-            pythonVersion: ${{ parameters.maximumPythonVersion }}
-
   # Push to main or the stable branches.
   - ${{ if and(eq(variables['Build.Reason'], 'IndividualCI'), startsWith(variables['Build.SourceBranch'], 'refs/heads/')) }}:
     - stage: "Push"
@@ -152,26 +137,7 @@ stages:
         - template: ".azure/wheels.yml"
           parameters:
             jobName: "linux"
-            pool: {vmImage: 'ubuntu-latest'}
-
-        - template: ".azure/wheels.yml"
-          parameters:
-            jobName: "macos"
-            pool: {vmImage: 'macOS-10.15'}
-
-        - template: ".azure/wheels.yml"
-          parameters:
-            jobName: "macos_arm"
-            pool: {vmImage: 'macOS-10.15'}
-            env:
-              CIBW_BEFORE_ALL: rustup target add aarch64-apple-darwin
-              CIBW_ARCHS_MACOS: arm64 universal2
-              CIBW_ENVIRONMENT: CARGO_BUILD_TARGET="aarch64-apple-darwin" PYO3_CROSS_LIB_DIR="/Library/Frameworks/Python.framework/Versions/$(python -c 'import sys; print(str(sys.version_info[0])+"."+str(sys.version_info[1]))')/lib/python$(python -c 'import sys; print(str(sys.version_info[0])+"."+str(sys.version_info[1]))')"
-
-        - template: ".azure/wheels.yml"
-          parameters:
-            jobName: "windows"
-            pool: {vmImage: 'windows-latest'}
+            pool: Default
             setupPython:
               - ${{ each version in parameters.supportedPythonVersions }}:
                 - task: UsePythonVersion@0
@@ -184,7 +150,7 @@ stages:
                     architecture: x64
 
         - job: 'sdist'
-          pool: {vmImage: 'ubuntu-latest'}
+          pool: Default
           steps:
             - task: UsePythonVersion@0
             - bash: |
@@ -194,8 +160,3 @@ stages:
             - task: PublishBuildArtifacts@1
               inputs: {pathtoPublish: 'dist'}
               condition: succeededOrFailed()
-            - bash: |
-                twine upload dist/*
-              env:
-                TWINE_USERNAME: "qiskit"
-                TWINE_PASSWORD: $(TWINE_PASSWORD)
