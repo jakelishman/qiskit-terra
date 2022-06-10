@@ -1282,6 +1282,7 @@ class QuantumCircuit:
                 parameters = operation_parameters.dynamic_parameters()
         else:
             operation_state_parameters = operation_parameters
+            parameters = ()
         # An operation may need to be copied to maintain the same behaviour as in gh-4887 when
         # handling `QuantumCircuit.assign_parameters(..., in_place=True)`.  To satisfy that, we only
         # need to perform the copy if there is a `ParameterExpression` in the parameters that the

@@ -89,8 +89,6 @@ class ParameterBackreferences(collections.abc.MutableSequence):
         "_local_parameters",
         "_local_keys",
         "_foreign_key_map",
-        "_getters",
-        "_setters",
     )
 
     __ABSENT = object()
@@ -121,38 +119,54 @@ class ParameterBackreferences(collections.abc.MutableSequence):
                 foreign_key += 1
             else:
                 self._local_keys.append(local_key)
-        # Before we're bound to a containing object, all getters and setters point to the local
-        # storage.
-        self._getters = [functools.partial(self._get_local_key, i) for i in range(len(self))]
-        self._setters = [functools.partial(self._set_local_key, i) for i in range(len(self))]
 
     def __len__(self):
         return len(self._local_parameters)
 
     def __iter__(self):
-        for getter in self._getters:
-            yield getter()
+        ref = None if self._bound_reference is None else self._bound_reference()
+        for key in range(len(self)):
+            yield self._get(key, ref)
 
     def __getitem__(self, key):
+        ref = None if self._bound_reference is None else self._bound_reference()
         if isinstance(key, slice):
-            return [self._getters[i]() for i in range(*key.indices(len(self)))]
-        return self._getters[key]()
+            return [self._get(i, ref) for i in range(*key.indices(len(self)))]
+        return self._get(key, ref)
+
+    def _get(self, key, ref):
+        return (
+            ref.parameters[self._foreign_key_map[key]]
+            if ref is not None and key in self._foreign_key_map
+            else self._local_parameters[key]
+        )
 
     def __setitem__(self, key, value):
+        ref = None if self._bound_reference is None else self._bound_reference()
         if isinstance(key, slice):
             values = tuple(value)
             for value_index, our_index in enumerate(range(*key.indices(len(self)))):
-                self._setters[our_index](values[value_index])
-            return
-        self._setters[key](value)
+                self._set(our_index, values[value_index], ref)
+        else:
+            self._set(key, value, ref)
+
+    def _set(self, key, value, ref):
+        if ref is not None and key in self._foreign_key_map:
+            ref.parameters[self._foreign_key_map[key]] = value
+        else:
+            self._local_parameters[key] = value
 
     def copy(self):
         """Return a shallow copy of these parameters."""
         # Shallowness in this context also means shallow-copying the internal mutable objects, but
         # not deep-copying them. This avoids a copied set of parameters holding the same references.
         out = type(self).__new__(type(self))
-        local_parameters, local_keys, foreign_key_map = self.__getstate__()
-        out.__setstate__((local_parameters.copy(), local_keys.copy(), foreign_key_map.copy()))
+        out._bound_reference = None
+        out._local_parameters = self._local_parameters.copy()
+        # `local_keys` and `foreign_key_map` are logically immutable after creation, and don't need
+        # to be copied in a shallow copy (this is important for performance).
+        out._local_keys = self._local_keys
+        out._foreign_key_map = self._foreign_key_map
         return out
 
     def __getstate__(self):
@@ -165,8 +179,6 @@ class ParameterBackreferences(collections.abc.MutableSequence):
         self._local_parameters = state[0]
         self._local_keys = state[1]
         self._foreign_key_map = state[2]
-        self._getters = [functools.partial(self._get_local_key, i) for i in range(len(self))]
-        self._setters = [functools.partial(self._set_local_key, i) for i in range(len(self))]
 
     __copy__ = copy
     # __deepcopy__ uses a recursive pickle by default, which will work just fine for us.
@@ -180,44 +192,27 @@ class ParameterBackreferences(collections.abc.MutableSequence):
     def reference(self, circuit_instruction):
         """Bind this parameter store to the given :class:`.CircuitInstruction`.
 
-        Any run-time parameters that are present, but ought to have been stored in the
-        :class:`.CircuitInstruction` instead will be transferred to the new binding.  Any necessary
-        getters and setters from this class will be updated to instead read and write to the foreign
-        location.
-
         This needs to be a separately called method to support existing code that might do, for
         example, ``circuit.append(RZGate(np.pi), [0], [])`` with the object constructed with
         parameters.  We need the regular parameter-setting machinery to continue working until a
         circuit takes ownership of the instruction."""
         self._bound_reference = weakref.ref(circuit_instruction)
-        for local_key, foreign_key in self._foreign_key_map.items():
-            self._getters[local_key] = functools.partial(self._get_foreign_key, foreign_key)
-            self._setters[local_key] = functools.partial(self._set_foreign_key, foreign_key)
 
     def dynamic_parameters(self) -> List[Any]:
         """A list of the parameters that are considered "dynamic", *i.e.* those that could in theory
         be set during a circuit execution by the executing hardware."""
-        return [self._getters[i]() for i in self._foreign_key_map]
+        ref = None if self._bound_reference is None else self._bound_reference()
+        return [self._get(i, ref) for i in self._foreign_key_map]
 
     def state_parameters(self) -> List[Any]:
         """A list of the parameters that are considered the "state" of the object, *i.e.* those that
         are not settable dynamically during circuit execution."""
-        return [self._getters[i]() for i in self._local_keys]
+        ref = None if self._bound_reference is None else self._bound_reference()
+        return [self._get(i, ref) for i in self._local_keys]
 
-    def _get_local_key(self, key: int):
-        out = self._local_parameters[key]
-        if out is self.__ABSENT:
-            raise KeyError(f"parameter {key} is not set")
-        return out
-
-    def _set_local_key(self, key: int, value):
-        self._local_parameters[key] = value
-
-    def _get_foreign_key(self, key: int):
-        return self._bound_reference().parameters[key]
-
-    def _set_foreign_key(self, key: int, value):
-        self._bound_reference().parameters[key] = value
+    def state_indices(self) -> List[int]:
+        """Return a list of the indices that refer to stateful parameters."""
+        return self._local_keys.copy()
 
     def __repr__(self):
         return repr(list(self))
