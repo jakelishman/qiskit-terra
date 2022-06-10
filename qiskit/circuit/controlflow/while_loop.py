@@ -14,7 +14,7 @@
 
 from typing import Optional, Tuple, Union
 
-from qiskit.circuit import Clbit, ClassicalRegister, QuantumCircuit
+from qiskit.circuit import Clbit, ClassicalRegister, QuantumCircuit, Instruction
 from qiskit.circuit.exceptions import CircuitError
 from .condition import validate_condition, condition_bits, condition_registers
 from .control_flow import ControlFlowOp
@@ -88,8 +88,7 @@ class WhileLoopOp(ControlFlowOp):
                 f"WhileLoopOp num_qubits/clbits: {self.num_qubits}/{self.num_clbits} "
                 f"Supplied body num_qubits/clbits: {body.num_qubits}/{body.num_clbits}."
             )
-
-        self._params = [body]
+        Instruction.params.fset(self, [body])
 
     @property
     def blocks(self):

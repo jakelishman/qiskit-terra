@@ -46,6 +46,7 @@ from qiskit.qasm.qasm import Qasm
 from qiskit.qasm.exceptions import QasmError
 from qiskit.circuit.exceptions import CircuitError
 from qiskit.utils.deprecation import deprecate_function
+from . import _instruction_parameter_shims as _shims
 from .parameterexpression import ParameterExpression, ParameterValueType
 from .quantumregister import QuantumRegister, Qubit, AncillaRegister, AncillaQubit
 from .classicalregister import ClassicalRegister, Clbit
@@ -1219,6 +1220,7 @@ class QuantumCircuit:
         instruction: Union[Instruction, CircuitInstruction],
         qargs: Optional[Sequence[QubitSpecifier]] = None,
         cargs: Optional[Sequence[ClbitSpecifier]] = None,
+        parameters: Optional[Sequence] = None,
     ) -> InstructionSet:
         """Append one or more instructions to the end of the circuit, modifying the circuit in
         place.
@@ -1249,6 +1251,7 @@ class QuantumCircuit:
             operation = instruction.operation
             qargs = instruction.qubits
             cargs = instruction.clbits
+            parameters = instruction.parameters
         else:
             operation = instruction
         # Convert input to instruction
@@ -1267,11 +1270,29 @@ class QuantumCircuit:
         if not isinstance(operation, Instruction):
             raise CircuitError("object is not an Instruction.")
 
-        # Make copy of parameterized gate instances
-        if hasattr(operation, "params"):
-            is_parameter = any(isinstance(param, Parameter) for param in operation.params)
-            if is_parameter:
-                operation = copy.deepcopy(operation)
+        # If the `params` getter from an `Instruction` instance doesn't directly give the shim
+        # back-referencing parameter list, it's already doing some weirdness and trying to assign
+        # `ParameterExpression` values in it will already fail (because the output of `params` is
+        # not the same object as the instruction's stateful `_params`).  We can't hope to fix those
+        # cases, so we have to let them continue to fail.
+        operation_parameters = operation.params
+        if isinstance(operation_parameters, _shims.ParameterBackreferences):
+            operation_state_parameters = operation_parameters.state_parameters()
+            if parameters is None:
+                parameters = operation_parameters.dynamic_parameters()
+        else:
+            operation_state_parameters = operation_parameters
+        # An operation may need to be copied to maintain the same behaviour as in gh-4887 when
+        # handling `QuantumCircuit.assign_parameters(..., in_place=True)`.  To satisfy that, we only
+        # need to perform the copy if there is a `ParameterExpression` in the parameters that the
+        # new `CircuitInstruction` does not manage (i.e. one that it specifically related to the
+        # state of the `Instruction` instance); for others, the in-place assignment will not affect
+        # the state of the `Instruction`, so the copy is not necessary.  This hopefully should not
+        # trigger; it's just for any user subclasses that don't have their parameter specs set up.
+        require_operation_copy = any(
+            isinstance(parameter, ParameterExpression) for parameter in operation_state_parameters
+        )
+        parameters = operation.bind_parameters(parameters)
 
         expanded_qargs = [self.qbit_argument_conversion(qarg) for qarg in qargs or []]
         expanded_cargs = [self.cbit_argument_conversion(carg) for carg in cargs or []]
@@ -1285,7 +1306,12 @@ class QuantumCircuit:
         instructions = InstructionSet(resource_requester=requester)
         for qarg, carg in operation.broadcast_arguments(expanded_qargs, expanded_cargs):
             self._check_dups(qarg)
-            instruction = CircuitInstruction(operation, qarg, carg)
+            instruction = CircuitInstruction(
+                operation.copy() if require_operation_copy else operation,
+                qarg,
+                carg,
+                parameters,
+            )
             appender(instruction)
             instructions.add(instruction)
         return instructions
@@ -1339,7 +1365,13 @@ class QuantumCircuit:
         """
         old_style = not isinstance(instruction, CircuitInstruction)
         if old_style:
-            instruction = CircuitInstruction(instruction, qargs, cargs)
+            operation_parameters = instruction.params
+            dynamic_parameters = (
+                operation_parameters.dynamic_parameters()
+                if isinstance(operation_parameters, _shims.ParameterBackreferences)
+                else []
+            )
+            instruction = CircuitInstruction(instruction, qargs, cargs, dynamic_parameters)
         self._data.append(instruction)
         self._update_parameter_table(instruction)
         # mark as normal circuit if a new instruction is added

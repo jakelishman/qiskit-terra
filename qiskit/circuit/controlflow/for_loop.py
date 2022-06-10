@@ -18,6 +18,7 @@ from typing import Iterable, Optional, Union
 from qiskit.circuit.parameter import Parameter
 from qiskit.circuit.exceptions import CircuitError
 from qiskit.circuit.quantumcircuit import QuantumCircuit
+from qiskit.circuit.instruction import Instruction
 from .control_flow import ControlFlowOp
 
 
@@ -111,7 +112,7 @@ class ForLoopOp(ControlFlowOp):
         # Preserve ranges so that they can be exported as OpenQASM3 ranges.
         indexset = indexset if isinstance(indexset, range) else tuple(indexset)
 
-        self._params = [indexset, loop_parameter, body]
+        Instruction.params.fset(self, [indexset, loop_parameter, body])
 
     @property
     def blocks(self):

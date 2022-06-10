@@ -12,7 +12,7 @@
 
 """Unitary gate."""
 
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional, Union, Tuple, Iterable
 import numpy as np
 
 from qiskit.circuit.parameterexpression import ParameterExpression
@@ -24,7 +24,13 @@ class Gate(Instruction):
     """Unitary gate."""
 
     def __init__(
-        self, name: str, num_qubits: int, params: List, label: Optional[str] = None
+        self,
+        name: str,
+        num_qubits: int,
+        params: Optional[Iterable] = None,
+        label: Optional[str] = None,
+        *,
+        _shim_parameter_spec=None,
     ) -> None:
         """Create a new gate.
 
@@ -35,7 +41,9 @@ class Gate(Instruction):
             label: An optional label for the gate.
         """
         self.definition = None
-        super().__init__(name, num_qubits, 0, params, label=label)
+        super().__init__(
+            name, num_qubits, 0, params, label=label, _shim_parameter_spec=_shim_parameter_spec
+        )
 
     # Set higher priority than Numpy array and matrix classes
     __array_priority__ = 20

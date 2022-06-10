@@ -233,7 +233,7 @@ class TestParameters(QiskitTestCase):
         expected_order = [a] + a_vector[:] + [b, some_name] + x[:] + [z]
         actual_order = qc.parameters
 
-        self.assertListEqual(expected_order, list(actual_order))
+        self.assertEqual(expected_order, list(actual_order))
 
     @data(True, False)
     def test_parameter_order_compose(self, front):
@@ -249,7 +249,7 @@ class TestParameters(QiskitTestCase):
 
         composed = qc1.compose(qc2, front=front)
 
-        self.assertListEqual(list(composed.parameters), order)
+        self.assertEqual(list(composed.parameters), order)
 
     def test_parameter_order_append(self):
         """Test the parameter order is correctly maintained upon appending circuits."""
@@ -262,7 +262,7 @@ class TestParameters(QiskitTestCase):
 
         qc1.append(qc2, [0])
 
-        self.assertListEqual(list(qc1.parameters), [x, y])
+        self.assertEqual(list(qc1.parameters), [x, y])
 
     def test_parameter_order_composing_nested_circuit(self):
         """Test the parameter order after nesting circuits and instructions."""
@@ -284,7 +284,7 @@ class TestParameters(QiskitTestCase):
 
         order = [x[0], x[1], x[2], x[3], x[4]]
 
-        self.assertListEqual(list(outer.parameters), order)
+        self.assertEqual(list(outer.parameters), order)
 
     def test_is_parameterized(self):
         """Test checking if a gate is parameterized (bound/unbound)"""
@@ -1144,7 +1144,7 @@ class TestParameters(QiskitTestCase):
         with self.subTest("shorten"):
             vec.resize(1)
             self.assertEqual(len(vec), 1)
-            self.assertListEqual([param.name for param in vec], _paramvec_names("x", 1))
+            self.assertEqual([param.name for param in vec], _paramvec_names("x", 1))
 
         with self.subTest("enlargen"):
             vec.resize(3)
@@ -1153,7 +1153,7 @@ class TestParameters(QiskitTestCase):
             # this is crucial for adding parameters to circuits since we cannot use the same
             # name if the instance is not the same
             self.assertIs(element, vec[1])
-            self.assertListEqual([param.name for param in vec], _paramvec_names("x", 3))
+            self.assertEqual([param.name for param in vec], _paramvec_names("x", 3))
 
 
 def _construct_circuit(param, qr):
@@ -1549,7 +1549,7 @@ class TestParameterExpressions(QiskitTestCase):
         elif target_type == "instruction":
             gate = qc1.to_instruction(parameter_map={theta: theta_p, phi: phi_p})
 
-        self.assertListEqual(gate.params, [theta_p, phi_p])
+        self.assertEqual(gate.params, [theta_p, phi_p])
 
         delta = Parameter("delta")
         qr2 = QuantumRegister(3, name="qr2")
@@ -1557,7 +1557,7 @@ class TestParameterExpressions(QiskitTestCase):
         qc2.ry(delta, qr2[0])
         qc2.append(gate, qargs=[qr2[1]])
 
-        self.assertListEqual(list(qc2.parameters), [delta, phi_p, theta_p])
+        self.assertEqual(list(qc2.parameters), [delta, phi_p, theta_p])
 
         binds = {delta: 1, theta_p: 2, phi_p: 3}
         expected_qc = QuantumCircuit(qr2)

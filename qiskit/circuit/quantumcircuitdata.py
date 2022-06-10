@@ -14,7 +14,7 @@
 QuantumCircuit.data while maintaining the interface of a python list."""
 
 from collections.abc import MutableSequence
-from typing import Tuple, Iterable, Optional
+from typing import Tuple, Iterable, Optional, Any, List
 
 from .exceptions import CircuitError
 from .instruction import Instruction
@@ -35,7 +35,14 @@ class CircuitInstruction:
         of distinct items, with no duplicates.
     """
 
-    __slots__ = ("operation", "qubits", "clbits", "_legacy_format_cache")
+    __slots__ = (
+        "operation",
+        "qubits",
+        "clbits",
+        "parameters",
+        "_legacy_format_cache",
+        "__weakref__",
+    )
 
     operation: Instruction
     """The logical operation that this instruction represents an execution of."""
@@ -43,16 +50,24 @@ class CircuitInstruction:
     """A sequence of the qubits that the operation is applied to."""
     clbits: Tuple[Clbit, ...]
     """A sequence of the classical bits that this operation reads from or writes to."""
+    parameters: List[Any]
+    """A sequence of the parameters that are dynamically supplied to the operation during circuit
+    execution."""
 
     def __init__(
         self,
         operation: Instruction,
         qubits: Iterable[Qubit] = (),
         clbits: Iterable[Clbit] = (),
+        parameters: Iterable[Any] = (),
     ):
         self.operation = operation
         self.qubits = tuple(qubits)
         self.clbits = tuple(clbits)
+        self.parameters = list(parameters)
+        # This private-attribute access should only exist for backwards-compatibility purposes while
+        # the change over circuit-controlled state in `Instruction` to here is taking place.
+        self.operation._add_backreference(self)
         self._legacy_format_cache = None
 
     def copy(self) -> "CircuitInstruction":
@@ -61,6 +76,7 @@ class CircuitInstruction:
             operation=self.operation,
             qubits=self.qubits,
             clbits=self.clbits,
+            parameters=self.parameters,
         )
 
     def replace(
@@ -68,12 +84,14 @@ class CircuitInstruction:
         operation: Optional[Instruction] = None,
         qubits: Optional[Iterable[Qubit]] = None,
         clbits: Optional[Iterable[Clbit]] = None,
+        parameters: Optional[Iterable[Any]] = None,
     ) -> "CircuitInstruction":
         """Return a new :class:`CircuitInstruction` with the given fields replaced."""
         return self.__class__(
             operation=self.operation if operation is None else operation,
             qubits=self.qubits if qubits is None else qubits,
             clbits=self.clbits if clbits is None else clbits,
+            parameters=self.parameters if parameters is None else parameters,
         )
 
     def __repr__(self):
@@ -82,6 +100,7 @@ class CircuitInstruction:
             f"operation={self.operation!r}"
             f", qubits={self.qubits!r}"
             f", clbits={self.clbits!r}"
+            f", parameters={self.parameters!r}"
             ")"
         )
 
@@ -91,11 +110,23 @@ class CircuitInstruction:
             return (
                 self.clbits == other.clbits
                 and self.qubits == other.qubits
+                and self.parameters == other.parameters
                 and self.operation == other.operation
             )
         if isinstance(other, tuple):
             return self._legacy_format == other
         return NotImplemented
+
+    def __getstate__(self):
+        return (self.operation, self.qubits, self.clbits, self.parameters)
+
+    def __setstate__(self, state):
+        self.operation = state[0]
+        self.qubits = state[1]
+        self.clbits = state[2]
+        self.parameters = state[3]
+        self.operation._add_backreference(self)
+        self._legacy_format_cache = None
 
     # Legacy tuple-like interface support.
     #

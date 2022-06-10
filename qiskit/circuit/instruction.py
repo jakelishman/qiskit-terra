@@ -33,7 +33,7 @@ The circuit itself keeps this context.
 
 import copy
 from itertools import zip_longest
-from typing import List
+from typing import List, Iterable
 
 import numpy
 
@@ -42,6 +42,7 @@ from qiskit.circuit.quantumregister import QuantumRegister
 from qiskit.circuit.classicalregister import ClassicalRegister, Clbit
 from qiskit.qobj.qasm_qobj import QasmQobjInstruction
 from qiskit.circuit.parameter import ParameterExpression
+from . import _instruction_parameter_shims as _shims
 from .tools import pi_check
 
 _CUTOFF_PRECISION = 1e-10
@@ -54,7 +55,18 @@ class Instruction:
     # NOTE: Using this attribute may change in the future (See issue # 5811)
     _directive = False
 
-    def __init__(self, name, num_qubits, num_clbits, params, duration=None, unit="dt", label=None):
+    def __init__(
+        self,
+        name,
+        num_qubits,
+        num_clbits,
+        params=None,
+        duration=None,
+        unit="dt",
+        label=None,
+        *,
+        _shim_parameter_spec=None,
+    ):
         """Create a new instruction.
 
         Args:
@@ -81,7 +93,22 @@ class Instruction:
         self._num_qubits = num_qubits
         self._num_clbits = num_clbits
 
-        self._params = []  # a list of gate params stored
+        # When more of the infrastructure for differently typed parameters is specified and known,
+        # `parameter_spec` will likely be a public read-only property.  For the first pass at
+        # separating out parameters into the `CircuitInstruction` class, though, we don't want to
+        # tie our hands by making it public, especially since the types will likely change.  There
+        # are two specs - `parameter_spec_both` contains all things that `Instruction.params` needs
+        # to know about, while `parameter_spec` is the one that is more likely to map to a
+        # subsequent public spec and contains only the types of the dynamic parameters that
+        # `QuantumCircuit` is responsible for managing.
+        #   -- Jake, 2022-06-08.
+        if _shim_parameter_spec is None:
+            self._parameter_spec_both = [_shims.OpaqueType()] * len(params)
+        else:
+            self._parameter_spec_both = _shim_parameter_spec
+        self._params = _shims.ParameterBackreferences(self._parameter_spec_both)
+        self._parameter_spec = [type_ for type_ in self._parameter_spec_both if type_.dynamic]
+
         # Custom instruction label
         # NOTE: The conditional statement checking if the `_label` attribute is
         #       already set is a temporary work around that can be removed after
@@ -100,7 +127,8 @@ class Instruction:
         self._duration = duration
         self._unit = unit
 
-        self.params = params  # must be at last (other properties may be required for validation)
+        if params is not None:
+            self.params = params  # must be last (other properties may be required for validation)
 
     def __eq__(self, other):
         """Two instructions are the same if they have the same name,
@@ -200,6 +228,40 @@ class Instruction:
 
         return True
 
+    def _add_backreference(self, circuit_instruction):
+        self._params.reference(circuit_instruction)
+
+    def bind_parameters(self, parameters: Iterable) -> List:
+        """Bind the given values to the dynamic parameter types this instruction takes.
+
+        Args:
+            parameters: the dynamic parameters to check and bind the values of.
+
+        Returns:
+            List: the parameters, type-checked and normalised to the expected types.  For example,
+            if ``1`` is given to a parameter expecting ``float``, the output in that slot would be
+            ``1.0``.
+
+        Raises:
+            ValueError: if an incorrect number of parameters are given.
+            TypeError: if any of the given parameters are of an incorrect type.
+
+        .. warning::
+
+            This function only operates on *dynamic* parameters, *i.e.* those that should be set and
+            managed by :class:`.QuantumCircuit`.  For historical reasons, :attr:`Instruction.params`
+            also refers to various parameters that are more properly considered the "state" of the
+            :class:`Instruction`.  The length of :attr:`Instruction.params` may be longer than what
+            :meth:`bind_parameters` expects.
+        """
+        parameters = tuple(parameters)
+        if len(parameters) != len(self._parameter_spec):
+            raise ValueError(
+                f"{type(self)} takes {len(self._parameter_spec)} dynamic parameters"
+                f", but received {len(parameters)}"
+            )
+        return [type_.bind(parameter) for type_, parameter in zip(self._parameter_spec, parameters)]
+
     def _define(self):
         """Populates self.definition with a decomposition of this gate."""
         pass
@@ -211,12 +273,17 @@ class Instruction:
 
     @params.setter
     def params(self, parameters):
-        self._params = []
-        for single_param in parameters:
-            if isinstance(single_param, ParameterExpression):
-                self._params.append(single_param)
-            else:
-                self._params.append(self.validate_parameter(single_param))
+        for i, (type_, parameter) in enumerate(zip(self._parameter_spec_both, parameters)):
+            # This validation can't be done using `bind_parameters` because this setter also has to
+            # account for the non-dynamic state parameters.  For historical reasons,
+            # `validate_parameter` needs to be called as well (since this is a currently supported
+            # method of validation) but `ParameterExpression` was added as a potential type without
+            # modifying the contract, so we can't call it on `ParameterExpression`s.
+            self._params[i] = type_.bind(
+                parameter
+                if isinstance(parameter, ParameterExpression)
+                else self.validate_parameter(parameter)
+            )
 
     def validate_parameter(self, parameter):
         """Instruction parameters has no validation or normalization."""
@@ -236,9 +303,9 @@ class Instruction:
         return self._definition
 
     @definition.setter
-    def definition(self, array):
+    def definition(self, circuit):
         """Set gate representation"""
-        self._definition = array
+        self._definition = circuit
 
     @property
     def decompositions(self):
@@ -421,7 +488,6 @@ class Instruction:
             updated if it was provided
         """
         cpy = self.__deepcopy__()
-
         if name:
             cpy.name = name
         return cpy

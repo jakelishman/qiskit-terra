@@ -201,6 +201,7 @@ class CUGate(ControlledGate):
             label=label,
             ctrl_state=ctrl_state,
             base_gate=UGate(theta, phi, lam),
+            _use_base_gate_parameters=False,
         )
 
     def _define(self):
@@ -264,36 +265,3 @@ class CUGate(ControlledGate):
             return numpy.array(
                 [[a, 0, b, 0], [0, 1, 0, 0], [c, 0, d, 0], [0, 0, 0, 1]], dtype=dtype
             )
-
-    @property
-    def params(self):
-        """Get parameters from base_gate.
-
-        Returns:
-            list: List of gate parameters.
-
-        Raises:
-            CircuitError: Controlled gate does not define a base gate
-        """
-        if self.base_gate:
-            # CU has one additional parameter to the U base gate
-            return self.base_gate.params + self._params
-        else:
-            raise CircuitError("Controlled gate does not define base gate for extracting params")
-
-    @params.setter
-    def params(self, parameters):
-        """Set base gate parameters.
-
-        Args:
-            parameters (list): The list of parameters to set.
-
-        Raises:
-            CircuitError: If controlled gate does not define a base gate.
-        """
-        # CU has one additional parameter to the U base gate
-        self._params = [parameters[-1]]
-        if self.base_gate:
-            self.base_gate.params = parameters[:-1]
-        else:
-            raise CircuitError("Controlled gate does not define base gate for extracting params")

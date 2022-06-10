@@ -37,6 +37,8 @@ class ControlledGate(Gate):
         definition: Optional["QuantumCircuit"] = None,
         ctrl_state: Optional[Union[int, str]] = None,
         base_gate: Optional[Gate] = None,
+        *,
+        _use_base_gate_parameters: bool = True,
     ):
         """Create a new ControlledGate. In the new gate the first ``num_ctrl_qubits``
         of the gate are the controls.
@@ -55,6 +57,10 @@ class ControlledGate(Gate):
                 must equal num_ctrl_qubits, MSB on left. If None, use
                 2**num_ctrl_qubits-1.
             base_gate: Gate object to be controlled.
+            _use_base_gate_parameters: if ``True`` (default), the parameters from the base gate are
+                used and assigned to verbatim when accessing the parameters of this gate.  This
+                option is only used internally to maintain backwards compatibility with certain
+                classes like :class:`.CUGate`.
 
         Raises:
             CircuitError: If ``num_ctrl_qubits`` >= ``num_qubits``.
@@ -93,6 +99,14 @@ class ControlledGate(Gate):
         """
         self.base_gate = None if base_gate is None else base_gate.copy()
         super().__init__(name, num_qubits, params, label=label)
+        # Historically, `ControlledGate` gave a direct reference to the base gate's `_params` as its
+        # `params` getter.  With new lazy evaluation of the definitions, we should be able to remove
+        # that in the future - it causes _many_ problems, e.g. Terra issues 7486, 7975, 7326, 7410
+        # and so on.  For the start of the parameter separation, though, we try and keep the
+        # external change surface small, which means _attempting_ to match bug-for-bug.
+        self._use_base_gate_parameters = _use_base_gate_parameters
+        if base_gate is not None and self._use_base_gate_parameters:
+            self._params = self.base_gate._params
         self._num_ctrl_qubits = 1
         self.num_ctrl_qubits = num_ctrl_qubits
         self.definition = copy.deepcopy(definition)
@@ -196,39 +210,13 @@ class ControlledGate(Gate):
         """
         self._ctrl_state = _ctrl_state_to_int(ctrl_state, self.num_ctrl_qubits)
 
-    @property
-    def params(self):
-        """Get parameters from base_gate.
-
-        Returns:
-            list: List of gate parameters.
-
-        Raises:
-            CircuitError: Controlled gate does not define a base gate
-        """
-        if self.base_gate:
-            return self.base_gate.params
-        else:
-            raise CircuitError("Controlled gate does not define base gate for extracting params")
-
-    @params.setter
-    def params(self, parameters):
-        """Set base gate parameters.
-
-        Args:
-            parameters (list): The list of parameters to set.
-
-        Raises:
-            CircuitError: If controlled gate does not define a base gate.
-        """
-        if self.base_gate:
-            self.base_gate.params = parameters
-        else:
-            raise CircuitError("Controlled gate does not define base gate for extracting params")
-
     def __deepcopy__(self, _memo=None):
         cpy = copy.copy(self)
         cpy.base_gate = self.base_gate.copy()
+        if self._use_base_gate_parameters:
+            cpy._params = cpy.base_gate.params
+        else:
+            cpy._params = self._params.copy()
         if self._definition:
             cpy._definition = copy.deepcopy(self._definition, _memo)
         return cpy
@@ -252,3 +240,6 @@ class ControlledGate(Gate):
     def inverse(self) -> "ControlledGate":
         """Invert this gate by calling inverse on the base gate."""
         return self.base_gate.inverse().control(self.num_ctrl_qubits, ctrl_state=self.ctrl_state)
+
+    def validate_parameter(self, parameter):
+        return self.base_gate.validate_parameter(parameter)

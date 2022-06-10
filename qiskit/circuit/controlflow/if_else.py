@@ -16,7 +16,7 @@
 from typing import Optional, Tuple, Union, Iterable, Set
 import itertools
 
-from qiskit.circuit import ClassicalRegister, Clbit, QuantumCircuit
+from qiskit.circuit import ClassicalRegister, Clbit, QuantumCircuit, Instruction
 from qiskit.circuit.instructionset import InstructionSet
 from qiskit.circuit.exceptions import CircuitError
 from qiskit.circuit.quantumregister import QuantumRegister
@@ -128,7 +128,7 @@ class IfElseOp(ControlFlowOp):
                     f"Supplied body num_qubits/clbits: {false_body.num_qubits}/{false_body.num_clbits}."
                 )
 
-        self._params = [true_body, false_body]
+        Instruction.params.fset(self, [true_body, false_body])
 
     @property
     def blocks(self):
