@@ -16,6 +16,8 @@
 
 import warnings
 
+from qiskit.circuit import _instruction_parameter_shims as _shims
+
 
 class DAGNode:
     """Parent class for DAGOpNode, DAGInNode, and DAGOutNode."""
@@ -94,7 +96,7 @@ class DAGNode:
 class DAGOpNode(DAGNode):
     """Object to represent an Instruction at a node in the DAGCircuit."""
 
-    __slots__ = ["op", "qargs", "cargs", "parameters", "sort_key", "__weakref__"]
+    __slots__ = ["op", "qargs", "cargs", "parameters", "sort_key"]
 
     def __init__(self, op, qargs=(), cargs=(), parameters=None):
         """Create an Instruction node"""
@@ -102,7 +104,9 @@ class DAGOpNode(DAGNode):
         self.op = op
         self.qargs = tuple(qargs)
         self.cargs = tuple(cargs)
-        self.parameters = list(parameters) if parameters is not None else []
+        self.parameters = (
+            list(parameters) if parameters is not None else _shims.dynamic_parameters(op)
+        )
         # Backwards-compatibility for dynamic parameters during changeover.
         self.op._add_backreference(self)
         self.sort_key = str(self.qargs)
@@ -119,7 +123,7 @@ class DAGOpNode(DAGNode):
 
     def __repr__(self):
         """Returns a representation of the DAGOpNode"""
-        return f"DAGOpNode(op={self.op}, qargs={self.qargs}, cargs={self.cargs})"
+        return f"DAGOpNode(op={self.op}, qargs={self.qargs}, cargs={self.cargs}, parameters={self.parameters})"
 
 
 class DAGInNode(DAGNode):

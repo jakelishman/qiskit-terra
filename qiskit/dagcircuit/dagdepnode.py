@@ -17,6 +17,7 @@
 import warnings
 
 from qiskit.exceptions import QiskitError
+from qiskit.circuit import _instruction_parameter_shims as _shims
 
 
 class DAGDepNode:
@@ -43,7 +44,6 @@ class DAGDepNode:
         "successorstovisit",
         "qindices",
         "cindices",
-        "__weakref__",
     ]
 
     def __init__(
@@ -71,9 +71,13 @@ class DAGDepNode:
         self.name = name
         self._qargs = tuple(qargs) if qargs is not None else ()
         self.cargs = tuple(cargs) if cargs is not None else ()
-        self.parameters = list(parameters) if parameters is not None else []
-        if op is not None:
+        if op is None:
+            self.parameters = list(parameters) if parameters is not None else []
+        else:
             # Backwards compatibility for moving parameters.
+            self.parameters = (
+                list(parameters) if parameters is not None else _shims.dynamic_parameters(op)
+            )
             self._op._add_backreference(self)
 
         if condition:

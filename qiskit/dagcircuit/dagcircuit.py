@@ -555,7 +555,6 @@ class DAGCircuit:
         """
         qargs = tuple(qargs) if qargs is not None else ()
         cargs = tuple(cargs) if cargs is not None else ()
-        parameters = parameters if parameters is not None else []
 
         all_cbits = self._bits_in_condition(op.condition)
         all_cbits = set(all_cbits).union(cargs)
@@ -596,7 +595,6 @@ class DAGCircuit:
         self._check_condition(op.name, op.condition)
         self._check_bits(qargs, self.input_map)
         self._check_bits(all_cbits, self.input_map)
-        parameters if parameters is not None else []
         node_index = self._add_op_node(op, qargs, cargs, parameters)
 
         # Add new out-edges to successors of the input nodes from the

@@ -12,8 +12,6 @@
 
 import abc
 import collections.abc
-import functools
-import weakref
 
 from typing import List, Any
 
@@ -97,15 +95,14 @@ class ParameterBackreferences(collections.abc.MutableSequence):
 
     def __init__(self, parameter_spec):
         self._bound_reference = None
-        """A weak reference to the :class:`.CircuitInstruction` that contains the foreign parameters
-        for this object.  The outer circuit instruction should contain the :class:`Instruction` that
-        this object is bound to.  We store only a weak reference, because we don't want to
-        inadvertantly keep the containing object alive if our :class:`Instruction` is removed from
-        it; this could easily leak memory, and stress out the garbage collector with many circular
-        references."""
+        """A reference to the :class:`.CircuitInstruction`, :class:`.DAGOpNode` or
+        :class:`.DAGDepNode` that contains the foreign parameters for this object.  The outer
+        object should contain the :class:`Instruction` that this object is bound to.  We need to
+        keep a full reference to this object, rather than just a weakref, in case the user discards
+        the container while still wanting to access parameters that were already moved into it."""
         self._local_parameters = [self.__ABSENT] * len(parameter_spec)
         """Storage for local parameters.  This is effectively the replacement of
-        `Instruction._params` from before this class existed."""
+        ``Instruction._params`` from before this class existed."""
         self._foreign_key_map = {}
         """Mapping of ``{local_index: foreign_index}``; if an index is a key in this map, then the
         getter should instead look to the foreign reference, and retrieve index ``foreign_index``
@@ -124,35 +121,32 @@ class ParameterBackreferences(collections.abc.MutableSequence):
         return len(self._local_parameters)
 
     def __iter__(self):
-        ref = None if self._bound_reference is None else self._bound_reference()
         for key in range(len(self)):
-            yield self._get(key, ref)
+            yield self._get(key)
 
     def __getitem__(self, key):
-        ref = None if self._bound_reference is None else self._bound_reference()
         if isinstance(key, slice):
-            return [self._get(i, ref) for i in range(*key.indices(len(self)))]
-        return self._get(key, ref)
+            return [self._get(i) for i in range(*key.indices(len(self)))]
+        return self._get(key)
 
-    def _get(self, key, ref):
+    def _get(self, key):
         return (
-            ref.parameters[self._foreign_key_map[key]]
-            if ref is not None and key in self._foreign_key_map
+            self._bound_reference.parameters[self._foreign_key_map[key]]
+            if self._bound_reference is not None and key in self._foreign_key_map
             else self._local_parameters[key]
         )
 
     def __setitem__(self, key, value):
-        ref = None if self._bound_reference is None else self._bound_reference()
         if isinstance(key, slice):
             values = tuple(value)
             for value_index, our_index in enumerate(range(*key.indices(len(self)))):
-                self._set(our_index, values[value_index], ref)
+                self._set(our_index, values[value_index])
         else:
-            self._set(key, value, ref)
+            self._set(key, value)
 
-    def _set(self, key, value, ref):
-        if ref is not None and key in self._foreign_key_map:
-            ref.parameters[self._foreign_key_map[key]] = value
+    def _set(self, key, value):
+        if self._bound_reference is not None and key in self._foreign_key_map:
+            self._bound_reference.parameters[self._foreign_key_map[key]] = value
         else:
             self._local_parameters[key] = value
 
@@ -170,8 +164,8 @@ class ParameterBackreferences(collections.abc.MutableSequence):
         return out
 
     def __getstate__(self):
-        # We must discard the un-pickleable weakref; we will gain it back when the containing
-        # `CircuitInstruction` reconstructs itself.
+        # We don't want to pickle our container if we are the only referrant; if it has another
+        # reason to exist, it should rebind us to it when it is reconstructed.
         return (self._local_parameters, self._local_keys, self._foreign_key_map)
 
     def __setstate__(self, state):
@@ -189,26 +183,24 @@ class ParameterBackreferences(collections.abc.MutableSequence):
     def insert(self, _key, _value):
         raise NotImplementedError("cannot change the number of parameters in an instruction")
 
-    def reference(self, circuit_instruction):
+    def reference(self, container):
         """Bind this parameter store to the given :class:`.CircuitInstruction`.
 
         This needs to be a separately called method to support existing code that might do, for
         example, ``circuit.append(RZGate(np.pi), [0], [])`` with the object constructed with
         parameters.  We need the regular parameter-setting machinery to continue working until a
         circuit takes ownership of the instruction."""
-        self._bound_reference = weakref.ref(circuit_instruction)
+        self._bound_reference = container
 
     def dynamic_parameters(self) -> List[Any]:
         """A list of the parameters that are considered "dynamic", *i.e.* those that could in theory
         be set during a circuit execution by the executing hardware."""
-        ref = None if self._bound_reference is None else self._bound_reference()
-        return [self._get(i, ref) for i in self._foreign_key_map]
+        return [self._get(i) for i in self._foreign_key_map]
 
     def state_parameters(self) -> List[Any]:
         """A list of the parameters that are considered the "state" of the object, *i.e.* those that
         are not settable dynamically during circuit execution."""
-        ref = None if self._bound_reference is None else self._bound_reference()
-        return [self._get(i, ref) for i in self._local_keys]
+        return [self._get(i) for i in self._local_keys]
 
     def state_indices(self) -> List[int]:
         """Return a list of the indices that refer to stateful parameters."""
@@ -222,3 +214,16 @@ class ParameterBackreferences(collections.abc.MutableSequence):
 
     def __eq__(self, other):
         return list(self) == other
+
+
+def dynamic_parameters(operation):
+    """Get a list of the dynamic parameters used by the :class:`~.circuit.Instruction` object
+    ``operation``.
+
+    If the parameters do not appear to be an instance of the shim class, the object cannot be
+    handling the new method of doing ``parameters`` in a backwards-compatible way, so we just have
+    to return the empty list."""
+    parameters = operation.params
+    if isinstance(parameters, ParameterBackreferences):
+        return parameters.dynamic_parameters()
+    return []

@@ -1366,12 +1366,7 @@ class QuantumCircuit:
         """
         old_style = not isinstance(instruction, CircuitInstruction)
         if old_style:
-            operation_parameters = instruction.params
-            dynamic_parameters = (
-                operation_parameters.dynamic_parameters()
-                if isinstance(operation_parameters, _shims.ParameterBackreferences)
-                else []
-            )
+            dynamic_parameters = _shims.dynamic_parameters(instruction)
             instruction = CircuitInstruction(instruction, qargs, cargs, dynamic_parameters)
         self._data.append(instruction)
         self._update_parameter_table(instruction)

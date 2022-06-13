@@ -41,7 +41,6 @@ class CircuitInstruction:
         "clbits",
         "parameters",
         "_legacy_format_cache",
-        "__weakref__",
     )
 
     operation: Instruction
