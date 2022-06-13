@@ -94,14 +94,17 @@ class DAGNode:
 class DAGOpNode(DAGNode):
     """Object to represent an Instruction at a node in the DAGCircuit."""
 
-    __slots__ = ["op", "qargs", "cargs", "sort_key"]
+    __slots__ = ["op", "qargs", "cargs", "parameters", "sort_key", "__weakref__"]
 
-    def __init__(self, op, qargs=(), cargs=()):
+    def __init__(self, op, qargs=(), cargs=(), parameters=None):
         """Create an Instruction node"""
         super().__init__()
         self.op = op
         self.qargs = tuple(qargs)
         self.cargs = tuple(cargs)
+        self.parameters = list(parameters) if parameters is not None else []
+        # Backwards-compatibility for dynamic parameters during changeover.
+        self.op._add_backreference(self)
         self.sort_key = str(self.qargs)
 
     @property

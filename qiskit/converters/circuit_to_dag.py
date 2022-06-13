@@ -60,7 +60,10 @@ def circuit_to_dag(circuit):
 
     for instruction in circuit.data:
         dagcircuit.apply_operation_back(
-            instruction.operation.copy(), instruction.qubits, instruction.clbits
+            instruction.operation.copy(),
+            instruction.qubits,
+            instruction.clbits,
+            instruction.parameters,
         )
 
     dagcircuit.duration = circuit.duration

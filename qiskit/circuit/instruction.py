@@ -228,8 +228,14 @@ class Instruction:
 
         return True
 
-    def _add_backreference(self, circuit_instruction):
-        self._params.reference(circuit_instruction)
+    def _add_backreference(self, container):
+        """Add a back-reference to a containing object.  This is used for backwards compatibility
+        purposes.
+
+        Currently, ``container`` will be a :class:`.CircuitInstruction`, :class:`.DAGOpNode` or
+        :class:`.DAGDepNode`.  As long as the parameters is the only backreference, all the
+        container needs to fulfil is to have a writeable, indexable ``parameters`` field."""
+        self._params.reference(container)
 
     def bind_parameters(self, parameters: Iterable) -> List:
         """Bind the given values to the dynamic parameter types this instruction takes.

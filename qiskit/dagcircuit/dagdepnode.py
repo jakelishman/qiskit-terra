@@ -32,6 +32,7 @@ class DAGDepNode:
         "name",
         "_qargs",
         "cargs",
+        "parameters",
         "sort_key",
         "node_id",
         "successors",
@@ -42,6 +43,7 @@ class DAGDepNode:
         "successorstovisit",
         "qindices",
         "cindices",
+        "__weakref__",
     ]
 
     def __init__(
@@ -51,6 +53,7 @@ class DAGDepNode:
         name=None,
         qargs=(),
         cargs=(),
+        parameters=None,
         condition=None,
         successors=None,
         predecessors=None,
@@ -68,6 +71,11 @@ class DAGDepNode:
         self.name = name
         self._qargs = tuple(qargs) if qargs is not None else ()
         self.cargs = tuple(cargs) if cargs is not None else ()
+        self.parameters = list(parameters) if parameters is not None else []
+        if op is not None:
+            # Backwards compatibility for moving parameters.
+            self._op._add_backreference(self)
+
         if condition:
             warnings.warn(
                 "The DAGDepNode 'condition' kwarg and 'condition' attribute are deprecated "

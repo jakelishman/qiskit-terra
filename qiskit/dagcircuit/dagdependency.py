@@ -379,13 +379,14 @@ class DAGDependency:
 
         return iter(rx.lexicographical_topological_sort(self._multi_graph, key=_key))
 
-    def add_op_node(self, operation, qargs, cargs):
+    def add_op_node(self, operation, qargs, cargs, parameters=None):
         """Add a DAGDepNode to the graph and update the edges.
 
         Args:
             operation (qiskit.circuit.Instruction): operation as a quantum gate.
             qargs (list[Qubit]): list of qubits on which the operation acts
             cargs (list[Clbit]): list of classical wires to attach to.
+            parameters (Optional[Iterable]): dynamic parameters to attach to.
         """
         directives = ["measure"]
         if not operation._directive and operation.name not in directives:
@@ -411,6 +412,7 @@ class DAGDependency:
             name=operation.name,
             qargs=qargs,
             cargs=cargs,
+            parameters=parameters,
             successors=[],
             predecessors=[],
             qindices=qindices_list,

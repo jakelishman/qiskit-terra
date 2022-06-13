@@ -38,7 +38,9 @@ def circuit_to_dagdependency(circuit):
         dagdependency.add_creg(register)
 
     for instruction in circuit.data:
-        dagdependency.add_op_node(instruction.operation, instruction.qubits, instruction.clbits)
+        dagdependency.add_op_node(
+            instruction.operation, instruction.qubits, instruction.clbits, instruction.parameters
+        )
 
     dagdependency._add_successors()
 

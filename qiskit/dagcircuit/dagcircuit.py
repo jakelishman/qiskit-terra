@@ -481,18 +481,19 @@ class DAGCircuit:
         else:
             self._op_names[op.name] -= 1
 
-    def _add_op_node(self, op, qargs, cargs):
+    def _add_op_node(self, op, qargs, cargs, parameters):
         """Add a new operation node to the graph and assign properties.
 
         Args:
             op (qiskit.circuit.Instruction): the operation associated with the DAG node
             qargs (list[Qubit]): list of quantum wires to attach to.
             cargs (list[Clbit]): list of classical wires to attach to.
+            parameters (Iterable): the parameters to attach to.
         Returns:
             int: The integer node index for the new op node on the DAG
         """
         # Add a new operation node to the graph
-        new_node = DAGOpNode(op=op, qargs=qargs, cargs=cargs)
+        new_node = DAGOpNode(op=op, qargs=qargs, cargs=cargs, parameters=parameters)
         node_index = self._multi_graph.add_node(new_node)
         new_node._node_id = node_index
         self._increment_op(op)
@@ -537,13 +538,14 @@ class DAGCircuit:
 
         return target_dag
 
-    def apply_operation_back(self, op, qargs=(), cargs=()):
+    def apply_operation_back(self, op, qargs=(), cargs=(), parameters=None):
         """Apply an operation to the output of the circuit.
 
         Args:
             op (qiskit.circuit.Instruction): the operation associated with the DAG node
             qargs (tuple[Qubit]): qubits that op will be applied to
             cargs (tuple[Clbit]): cbits that op will be applied to
+            parameters (Optional[Iterable]): the classical dynamic parameters the op is applied to.
         Returns:
             DAGOpNode: the node for the op that was added to the dag
 
@@ -553,6 +555,7 @@ class DAGCircuit:
         """
         qargs = tuple(qargs) if qargs is not None else ()
         cargs = tuple(cargs) if cargs is not None else ()
+        parameters = parameters if parameters is not None else []
 
         all_cbits = self._bits_in_condition(op.condition)
         all_cbits = set(all_cbits).union(cargs)
@@ -561,7 +564,7 @@ class DAGCircuit:
         self._check_bits(qargs, self.output_map)
         self._check_bits(all_cbits, self.output_map)
 
-        node_index = self._add_op_node(op, qargs, cargs)
+        node_index = self._add_op_node(op, qargs, cargs, parameters)
 
         # Add new in-edges from predecessors of the output nodes to the
         # operation node while deleting the old in-edges of the output nodes
@@ -573,13 +576,14 @@ class DAGCircuit:
         )
         return self._multi_graph[node_index]
 
-    def apply_operation_front(self, op, qargs=(), cargs=()):
+    def apply_operation_front(self, op, qargs=(), cargs=(), parameters=None):
         """Apply an operation to the input of the circuit.
 
         Args:
             op (qiskit.circuit.Instruction): the operation associated with the DAG node
             qargs (tuple[Qubit]): qubits that op will be applied to
             cargs (tuple[Clbit]): cbits that op will be applied to
+            parameters (Optional[Iterable]): the classical dynamic parameters the op is applied to.
         Returns:
             DAGOpNode: the node for the op that was added to the dag
 
@@ -592,7 +596,8 @@ class DAGCircuit:
         self._check_condition(op.name, op.condition)
         self._check_bits(qargs, self.input_map)
         self._check_bits(all_cbits, self.input_map)
-        node_index = self._add_op_node(op, qargs, cargs)
+        parameters if parameters is not None else []
+        node_index = self._add_op_node(op, qargs, cargs, parameters)
 
         # Add new out-edges to successors of the input nodes from the
         # operation node while deleting the old out-edges of the input nodes

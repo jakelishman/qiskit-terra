@@ -59,7 +59,7 @@ def dag_to_circuit(dag):
     circuit.calibrations = dag.calibrations
 
     for node in dag.topological_op_nodes():
-        circuit._append(CircuitInstruction(node.op.copy(), node.qargs, node.cargs))
+        circuit._append(CircuitInstruction(node.op.copy(), node.qargs, node.cargs, node.parameters))
 
     circuit.duration = dag.duration
     circuit.unit = dag.unit
