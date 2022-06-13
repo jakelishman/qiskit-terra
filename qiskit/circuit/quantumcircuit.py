@@ -1376,25 +1376,41 @@ class QuantumCircuit:
         return instruction.operation if old_style else instruction
 
     def _update_parameter_table(self, instruction: CircuitInstruction):
-        for param_index, param in enumerate(instruction.operation.params):
+        # Handle the new-style dynamic parameters first.
+        for param_index, param in enumerate(instruction.parameters):
+            if isinstance(param, ParameterExpression):
+                self._add_parameter_table_references(instruction, param_index, param.parameters)
+        # Handle any remaining parameters in stateful locations of the operation.
+        operation_params = instruction.operation.params
+        iterable = (
+            zip(operation_params.state_indices(), operation_params.state_parameters())
+            if isinstance(operation_params, _shims.ParameterBackreferences)
+            else enumerate(operation_params)
+        )
+        for param_index, param in iterable:
+            # Scoped constructs like the control-flow ops use QuantumCircuit as a parameter.  This
+            # can only occur in stateful parameters.
             if isinstance(param, (ParameterExpression, QuantumCircuit)):
-                # Scoped constructs like the control-flow ops use QuantumCircuit as a parameter.
-                atomic_parameters = set(param.parameters)
+                self._add_parameter_table_references(
+                    instruction.operation, param_index, param.parameters
+                )
+
+    def _add_parameter_table_references(self, obj, index, parameters):
+        """Add a parameter-table reference to each of the ``parameters`` as being at the given
+        ``index`` in ``obj``.  The object can be either a :class:`.CircuitInstruction` (dynamic
+        parameters) or an :class:`~.circuit.Instruction` (stateful parameters).
+
+        ``parameters`` should only contain unique elements."""
+        names = self._parameter_table.get_names()
+        for parameter in parameters:
+            if parameter in self._parameter_table:
+                self._parameter_table[parameter].add((obj, index))
+            elif parameter.name in names:
+                raise CircuitError(f"Name conflict on adding parameter: {parameter.name}")
             else:
-                atomic_parameters = set()
-
-            for parameter in atomic_parameters:
-                if parameter in self._parameter_table:
-                    self._parameter_table[parameter].add((instruction.operation, param_index))
-                else:
-                    if parameter.name in self._parameter_table.get_names():
-                        raise CircuitError(f"Name conflict on adding parameter: {parameter.name}")
-                    self._parameter_table[parameter] = ParameterReferences(
-                        ((instruction.operation, param_index),)
-                    )
-
-                    # clear cache if new parameter is added
-                    self._parameters = None
+                self._parameter_table[parameter] = ParameterReferences(((obj, index),))
+                # Clear sorted parameter cache when adding a new parameter.
+                self._parameters = None
 
     def add_register(self, *regs: Union[Register, int, Sequence[Bit]]) -> None:
         """Add registers."""
@@ -2702,29 +2718,10 @@ class QuantumCircuit:
         # parameter might be in global phase only
         if parameter in self._parameter_table:
             for instr, param_index in self._parameter_table[parameter]:
-                assignee = instr.params[param_index]
-                # Normal ParameterExpression.
-                if isinstance(assignee, ParameterExpression):
-                    new_param = assignee.assign(parameter, value)
-                    # if fully bound, validate
-                    if len(new_param.parameters) == 0:
-                        instr.params[param_index] = instr.validate_parameter(new_param)
-                    else:
-                        instr.params[param_index] = new_param
-
-                    self._rebind_definition(instr, parameter, value)
-                # Scoped block of a larger instruction.
-                elif isinstance(assignee, QuantumCircuit):
-                    # It's possible that someone may re-use a loop body, so we need to mutate the
-                    # parameter vector with a new circuit, rather than mutating the body.
-                    instr.params[param_index] = assignee.assign_parameters({parameter: value})
+                if isinstance(instr, CircuitInstruction):
+                    self._assign_parameter_dynamic(instr, param_index, parameter, value)
                 else:
-                    raise RuntimeError(  # pragma: no cover
-                        "The ParameterTable or data of this QuantumCircuit have become out-of-sync."
-                        f"\nParameterTable: {self._parameter_table}"
-                        f"\nData: {self.data}"
-                    )
-
+                    self._assign_parameter_state(instr, param_index, parameter, value)
             if isinstance(value, ParameterExpression):
                 entry = self._parameter_table.pop(parameter)
                 for new_parameter in value.parameters:
@@ -2744,6 +2741,38 @@ class QuantumCircuit:
         # clear parameter cache
         self._parameters = None
         self._assign_calibration_parameters(parameter, value)
+
+    def _assign_parameter_dynamic(
+        self,
+        instruction: CircuitInstruction,
+        index: int,
+        parameter: Parameter,
+        value: ParameterValueType,
+    ) -> None:
+        new_parameter = instruction.parameters[index].assign(parameter, value)
+        if not new_parameter.parameters:
+            new_parameter = instruction.operation.validate_parameter(new_parameter)
+        instruction.parameters[index] = new_parameter
+
+    def _assign_parameter_state(
+        self,
+        instruction: Instruction,
+        index: int,
+        parameter: Parameter,
+        value: ParameterValueType,
+    ) -> None:
+        assignee = instruction.params[index]
+        if isinstance(assignee, ParameterExpression):
+            new_parameter = instruction.params[index].assign(parameter, value)
+            if not new_parameter.parameters:
+                new_parameter = instruction.validate_parameter(new_parameter)
+            self._rebind_definition(instruction, parameter, value)
+        else:
+            # QuantumCircuit, scoped block of a larger instruction.  It's possible that someone may
+            # re-use a loop body, so we need to mutate the parameter vector with a new circuit,
+            # rather than mutating the body.
+            new_parameter = assignee.assign_parameters({parameter: value})
+        instruction.params[index] = new_parameter
 
     def _assign_calibration_parameters(
         self, parameter: Parameter, value: ParameterValueType

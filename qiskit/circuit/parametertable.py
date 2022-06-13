@@ -23,6 +23,10 @@ class ParameterReferences(MutableSet):
     testing is overriden such that items that are otherwise value-wise equal
     are still considered distinct if their ``instruction``\\ s are referentially
     distinct.
+
+    The ``instruction`` can be either a :class:`~.circuit.Instruction` (old-style) or a
+    :class:`.CircuitInstruction` (new-style).  In the former case, the index is into the ``params``
+    field, while if the latter, it is into the ``parameters`` field.
     """
 
     def _instance_key(self, ref):
@@ -81,6 +85,10 @@ class ParameterTable(MutableMapping):
     which overrides membership testing to be referential for instructions,
     and is set-like. Elements of :class:`~ParameterReferences`
     are tuples of ``(instruction, param_index)``.
+
+    The ``instruction`` can be either a :class:`~.circuit.Instruction` (old-style) or a
+    :class:`.CircuitInstruction` (new-style).  In the former case, the index is into the ``params``
+    field, while if the latter, it is into the ``parameters`` field.
     """
 
     __slots__ = ["_table", "_keys", "_names"]
