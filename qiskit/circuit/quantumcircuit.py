@@ -3604,7 +3604,7 @@ class QuantumCircuit:
         """
         from .library.standard_gates.u import UGate
 
-        return self.append(UGate(theta, phi, lam), [qubit], [])
+        return self.append(UGate(), [qubit], [], [theta, phi, lam])
 
     def cu(
         self,

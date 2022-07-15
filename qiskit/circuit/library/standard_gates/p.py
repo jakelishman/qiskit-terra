@@ -12,8 +12,11 @@
 
 """Phase Gate."""
 from cmath import exp
+
+import typing
 from typing import Optional, Union
 import numpy
+from qiskit.circuit import _instruction_parameter_shims as _shims
 from qiskit.circuit.controlledgate import ControlledGate
 from qiskit.circuit.gate import Gate
 from qiskit.circuit.quantumregister import QuantumRegister
@@ -71,19 +74,20 @@ class PhaseGate(Gate):
         `1612.00858 <https://arxiv.org/abs/1612.00858>`_
     """
 
-    def __init__(self, theta: ParameterValueType, label: Optional[str] = None):
+    _spec = (_shims.FloatType(),)
+
+    def __init__(self, theta: Optional[ParameterValueType] = None, label: Optional[str] = None):
         """Create new Phase gate."""
-        super().__init__("p", 1, [theta], label=label)
+        parameters = None if theta is None else [theta]
+        super().__init__("p", 1, parameters, label=label, _shim_parameter_spec=self._spec)
 
-    def _define(self):
+    def _decompose(self, parameters):
         # pylint: disable=cyclic-import
-        from qiskit.circuit.quantumcircuit import QuantumCircuit
-        from .u import UGate
+        from qiskit.circuit import QuantumCircuit
 
-        q = QuantumRegister(1, "q")
-        qc = QuantumCircuit(q, name=self.name)
-        qc.append(UGate(0, 0, self.params[0]), [0])
-        self.definition = qc
+        qc = QuantumCircuit(1, name=self.name)
+        qc.u(0, 0, parameters[0], 0)
+        return qc
 
     def control(
         self,
@@ -160,24 +164,28 @@ class CPhaseGate(ControlledGate):
         phase difference.
     """
 
+    _spec = (_shims.FloatType(),)
+
     def __init__(
         self,
-        theta: ParameterValueType,
+        theta: Optional[ParameterValueType] = None,
         label: Optional[str] = None,
         ctrl_state: Optional[Union[str, int]] = None,
     ):
         """Create new CPhase gate."""
+        parameters = None if theta is None else [theta]
         super().__init__(
             "cp",
             2,
-            [theta],
+            parameters,
             num_ctrl_qubits=1,
             label=label,
             ctrl_state=ctrl_state,
             base_gate=PhaseGate(theta),
+            _shim_parameter_spec=self._spec,
         )
 
-    def _define(self):
+    def _decompose(self, parameters):
         """
         gate cphase(lambda) a,b
         { phase(lambda/2) a; cx a,b;
@@ -193,14 +201,13 @@ class CPhaseGate(ControlledGate):
         #      └────────┘┌─┴─┐┌────────┐┌─┴─┐┌────────┐
         # q_1: ──────────┤ X ├┤ P(λ/2) ├┤ X ├┤ P(λ/2) ├
         #                └───┘└────────┘└───┘└────────┘
-        q = QuantumRegister(2, "q")
-        qc = QuantumCircuit(q, name=self.name)
-        qc.p(self.params[0] / 2, 0)
+        qc = QuantumCircuit(2, name=self.name)
+        qc.p(parameters[0] / 2, 0)
         qc.cx(0, 1)
-        qc.p(-self.params[0] / 2, 1)
+        qc.p(-parameters[0] / 2, 1)
         qc.cx(0, 1)
-        qc.p(self.params[0] / 2, 1)
-        self.definition = qc
+        qc.p(parameters[0] / 2, 1)
+        return qc
 
     def control(
         self,
@@ -264,18 +271,48 @@ class MCPhaseGate(ControlledGate):
         The singly-controlled-version of this gate.
     """
 
+    _spec = (_shims.FloatType(),)
+
+    @typing.overload
+    def __init__(self, lam: int, num_ctrl_qubits=None, label: Optional[str] = None):
+        ...
+
+    @typing.overload
     def __init__(self, lam: ParameterValueType, num_ctrl_qubits: int, label: Optional[str] = None):
-        """Create new MCPhase gate."""
+        ...
+
+    def __init__(self, lam, num_ctrl_qubits=None, label=None):
+        """Create new MCPhase gate.
+
+        This can either be instantiated as::
+
+            MCPhaseGate(num_ctrl_qubits, label=label)
+
+        or::
+
+            MCPhaseGate(lam, num_ctrl_qubits, label=label)
+
+        where ``lam`` is the phase parameter of the gate.  The first form is preferred; dynamic
+        parameters are no longer properties of the base instructions, but the complete
+        :class:`.CircuitInstruction`.
+
+        Args:
+            lam (ParameterExpression | float): the phase parameter of the gate.
+            num_ctrl_qubits (int): the number of control qubits to use
+            label (str): an optional label for this gate.
+        """
+        parameters = None if lam is None else [lam]
         super().__init__(
             "mcphase",
             num_ctrl_qubits + 1,
-            [lam],
+            parameters,
             num_ctrl_qubits=num_ctrl_qubits,
             label=label,
             base_gate=PhaseGate(lam),
+            _shim_parameter_spec=self._spec,
         )
 
-    def _define(self):
+    def _decompose(self, parameters):
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
 
@@ -283,13 +320,13 @@ class MCPhaseGate(ControlledGate):
         qc = QuantumCircuit(q, name=self.name)
 
         if self.num_ctrl_qubits == 0:
-            qc.p(self.params[0], 0)
+            qc.p(parameters[0], 0)
         if self.num_ctrl_qubits == 1:
-            qc.cp(self.params[0], 0, 1)
+            qc.cp(parameters[0], 0, 1)
         else:
             from .u3 import _gray_code_chain
 
-            scaled_lam = self.params[0] / (2 ** (self.num_ctrl_qubits - 1))
+            scaled_lam = parameters[0] / (2 ** (self.num_ctrl_qubits - 1))
             bottom_gate = CPhaseGate(scaled_lam)
             for operation, qubits, clbits in _gray_code_chain(q, self.num_ctrl_qubits, bottom_gate):
                 qc._append(operation, qubits, clbits)

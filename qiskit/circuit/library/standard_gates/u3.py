@@ -15,6 +15,7 @@ import math
 from cmath import exp
 from typing import Optional, Union
 import numpy
+from qiskit.circuit import CircuitInstruction
 from qiskit.circuit.controlledgate import ControlledGate
 from qiskit.circuit.gate import Gate
 from qiskit.circuit.parameterexpression import ParameterValueType
@@ -285,7 +286,7 @@ def _generate_gray_code(num_bits):
     return [format(x, "0%sb" % num_bits) for x in result]
 
 
-def _gray_code_chain(q, num_ctrl_qubits, gate):
+def _gray_code_chain(q, num_ctrl_qubits, gate, parameters):
     """Apply the gate to the the last qubit in the register ``q``, controlled on all
     preceding qubits. This function uses the gray code to propagate down to the last qubit.
 
@@ -315,17 +316,24 @@ def _gray_code_chain(q, num_ctrl_qubits, gate):
             pos = None
         if pos is not None:
             if pos != lm_pos:
-                rule.append((CXGate(), [q_controls[pos], q_controls[lm_pos]], []))
+                rule.append(
+                    CircuitInstruction(CXGate(), (q_controls[pos], q_controls[lm_pos]), (), ())
+                )
             else:
                 indices = [i for i, x in enumerate(pattern) if x == "1"]
                 for idx in indices[1:]:
-                    rule.append((CXGate(), [q_controls[idx], q_controls[lm_pos]], []))
+                    rule.append(
+                        CircuitInstruction(CXGate(), (q_controls[idx], q_controls[lm_pos]), (), ())
+                    )
+
         # check parity
         if pattern.count("1") % 2 == 0:
             # inverse
-            rule.append((gate.inverse(), [q_controls[lm_pos], q_target], []))
+            rule.append(
+                CircuitInstruction(gate.inverse(), (q_controls[lm_pos], q_target), (), parameters)
+            )
         else:
-            rule.append((gate, [q_controls[lm_pos], q_target], []))
+            rule.append(CircuitInstruction(gate, (q_controls[lm_pos], q_target), (), parameters))
         last_pattern = pattern
 
     return rule

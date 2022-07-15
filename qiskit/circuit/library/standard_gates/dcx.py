@@ -46,9 +46,9 @@ class DCXGate(Gate):
 
     def __init__(self):
         """Create new DCX gate."""
-        super().__init__("dcx", 2, [])
+        super().__init__("dcx", 2, _shim_parameter_spec=())
 
-    def _define(self):
+    def _decompose(self, parameters):
         """
         gate dcx a, b { cx a, b; cx a, b; }
         """
@@ -61,8 +61,6 @@ class DCXGate(Gate):
         rules = [(CXGate(), [q[0], q[1]], []), (CXGate(), [q[1], q[0]], [])]
         for instr, qargs, cargs in rules:
             qc._append(instr, qargs, cargs)
-
-        self.definition = qc
 
     def __array__(self, dtype=None):
         """Return a numpy.array for the DCX gate."""

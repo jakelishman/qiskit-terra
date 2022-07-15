@@ -17,9 +17,9 @@ from typing import Optional, Union
 import numpy
 
 from qiskit.qasm import pi
+from qiskit.circuit import _instruction_parameter_shims as _shims
 from qiskit.circuit.controlledgate import ControlledGate
 from qiskit.circuit.gate import Gate
-from qiskit.circuit.quantumregister import QuantumRegister
 from qiskit.circuit.parameterexpression import ParameterValueType
 
 
@@ -47,25 +47,23 @@ class RXGate(Gate):
             \end{pmatrix}
     """
 
-    def __init__(self, theta: ParameterValueType, label: Optional[str] = None):
-        """Create new RX gate."""
-        super().__init__("rx", 1, [theta], label=label)
+    _spec = (_shims.FloatType(),)
 
-    def _define(self):
+    def __init__(self, theta: Optional[ParameterValueType] = None, label: Optional[str] = None):
+        """Create new RX gate."""
+        parameters = None if theta is None else [theta]
+        super().__init__("rx", 1, parameters, label=label, _shim_parameter_spec=self._spec)
+
+    def _decompose(self, parameters):
         """
         gate rx(theta) a {r(theta, 0) a;}
         """
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
-        from .r import RGate
 
-        q = QuantumRegister(1, "q")
-        qc = QuantumCircuit(q, name=self.name)
-        rules = [(RGate(self.params[0], 0), [q[0]], [])]
-        for instr, qargs, cargs in rules:
-            qc._append(instr, qargs, cargs)
-
-        self.definition = qc
+        qc = QuantumCircuit(1, name=self.name)
+        qc.r(parameters[0], 0, 0)
+        return qc
 
     def control(
         self,

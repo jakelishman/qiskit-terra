@@ -15,6 +15,7 @@ import math
 from cmath import exp
 from typing import Optional, Union
 import numpy
+from qiskit.circuit import _instruction_parameter_shims as _shims
 from qiskit.circuit.controlledgate import ControlledGate
 from qiskit.circuit.gate import Gate
 from qiskit.circuit.parameterexpression import ParameterValueType
@@ -64,15 +65,18 @@ class UGate(Gate):
         U(\theta, 0, 0) = RY(\theta)
     """
 
+    _spec = (_shims.FloatType(),) * 3
+
     def __init__(
         self,
-        theta: ParameterValueType,
-        phi: ParameterValueType,
-        lam: ParameterValueType,
+        theta: Optional[ParameterValueType] = None,
+        phi: Optional[ParameterValueType] = None,
+        lam: Optional[ParameterValueType] = None,
         label: Optional[str] = None,
     ):
         """Create new U gate."""
-        super().__init__("u", 1, [theta, phi, lam], label=label)
+        parameters = [] if theta is None else [theta, phi, lam]
+        super().__init__("u", 1, parameters, label=label, _shim_parameter_spec=self._spec)
 
     def inverse(self):
         r"""Return inverted U gate.
@@ -110,6 +114,10 @@ class UGate(Gate):
             gate.base_gate.label = self.label
             return gate
         return super().control(num_ctrl_qubits=num_ctrl_qubits, label=label, ctrl_state=ctrl_state)
+
+    def _decompose(self, _parameters):
+        # U is the base of the decomposition tree.
+        return None
 
     def __array__(self, dtype=complex):
         """Return a numpy.array for the U gate."""
@@ -204,7 +212,7 @@ class CUGate(ControlledGate):
             _use_base_gate_parameters=False,
         )
 
-    def _define(self):
+    def _decompose(self, parameters):
         """
         gate cu(theta,phi,lambda,gamma) c, t
         { phase(gamma) c;
@@ -226,14 +234,17 @@ class CUGate(ControlledGate):
         #      └──────────────┘                └───┘└──────────────────────┘└───┘└────────────┘
         q = QuantumRegister(2, "q")
         qc = QuantumCircuit(q, name=self.name)
-        qc.p(self.params[3], 0)
-        qc.p((self.params[2] + self.params[1]) / 2, 0)
-        qc.p((self.params[2] - self.params[1]) / 2, 1)
+        qc.p(parameters[3], 0)
+        qc.p((parameters[2] + parameters[1]) / 2, 0)
+        qc.p((parameters[2] - parameters[1]) / 2, 1)
         qc.cx(0, 1)
-        qc.u(-self.params[0] / 2, 0, -(self.params[1] + self.params[2]) / 2, 1)
+        qc.u(-parameters[0] / 2, 0, -(parameters[1] + parameters[2]) / 2, 1)
         qc.cx(0, 1)
-        qc.u(self.params[0] / 2, self.params[1], 0, 1)
-        self.definition = qc
+        qc.u(parameters[0] / 2, parameters[1], 0, 1)
+        return qc
+
+    def _define(self):
+        self.definition = self._decompose(self.params)
 
     def inverse(self):
         r"""Return inverted CU gate.

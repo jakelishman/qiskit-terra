@@ -39,6 +39,7 @@ class ControlledGate(Gate):
         base_gate: Optional[Gate] = None,
         *,
         _use_base_gate_parameters: bool = True,
+        _shim_parameter_spec=None,
     ):
         """Create a new ControlledGate. In the new gate the first ``num_ctrl_qubits``
         of the gate are the controls.
@@ -98,7 +99,9 @@ class ControlledGate(Gate):
            qc2.draw()
         """
         self.base_gate = None if base_gate is None else base_gate.copy()
-        super().__init__(name, num_qubits, params, label=label)
+        super().__init__(
+            name, num_qubits, params, label=label, _shim_parameter_spec=_shim_parameter_spec
+        )
         # Historically, `ControlledGate` gave a direct reference to the base gate's `_params` as its
         # `params` getter.  With new lazy evaluation of the definitions, we should be able to remove
         # that in the future - it causes _many_ problems, e.g. Terra issues 7486, 7975, 7326, 7410

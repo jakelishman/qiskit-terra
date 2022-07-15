@@ -14,8 +14,7 @@
 from math import sqrt
 import numpy as np
 
-from qiskit.circuit.gate import Gate
-from qiskit.circuit.quantumregister import QuantumRegister
+from qiskit.circuit import CircuitInstruction, Gate, QuantumRegister
 from .rzx import RZXGate
 from .x import XGate
 
@@ -78,9 +77,9 @@ class ECRGate(Gate):
 
     def __init__(self):
         """Create new ECR gate."""
-        super().__init__("ecr", 2, [])
+        super().__init__("ecr", 2, _shim_parameter_spec=())
 
-    def _define(self):
+    def _decompose(self, parameters):
         """
         gate ecr a, b { rzx(pi/4) a, b; x a; rzx(-pi/4) a, b;}
         """
@@ -90,14 +89,13 @@ class ECRGate(Gate):
         q = QuantumRegister(2, "q")
         qc = QuantumCircuit(q, name=self.name)
         rules = [
-            (RZXGate(np.pi / 4), [q[0], q[1]], []),
-            (XGate(), [q[0]], []),
-            (RZXGate(-np.pi / 4), [q[0], q[1]], []),
+            CircuitInstruction(RZXGate(), [q[0], q[1]], [], [np.pi / 4]),
+            CircuitInstruction(XGate(), [q[0]], [], []),
+            CircuitInstruction(RZXGate(), [q[0], q[1]], [], [-np.pi / 4]),
         ]
         for instr, qargs, cargs in rules:
-            qc._append(instr, qargs, cargs)
-
-        self.definition = qc
+            qc._append(instr, qargs, cargs, ())
+        return qc
 
     def to_matrix(self):
         """Return a numpy.array for the ECR gate."""

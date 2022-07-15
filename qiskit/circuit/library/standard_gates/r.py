@@ -17,8 +17,8 @@ from cmath import exp
 from typing import Optional
 import numpy
 from qiskit.qasm import pi
+from qiskit.circuit import _instruction_parameter_shims as _shims
 from qiskit.circuit.gate import Gate
-from qiskit.circuit.quantumregister import QuantumRegister
 from qiskit.circuit.parameterexpression import ParameterValueType
 
 
@@ -46,29 +46,29 @@ class RGate(Gate):
             \end{pmatrix}
     """
 
+    _spec = (_shims.FloatType(),) * 2
+
     def __init__(
-        self, theta: ParameterValueType, phi: ParameterValueType, label: Optional[str] = None
+        self,
+        theta: Optional[ParameterValueType] = None,
+        phi: Optional[ParameterValueType] = None,
+        label: Optional[str] = None,
     ):
         """Create new r single-qubit gate."""
-        super().__init__("r", 1, [theta, phi], label=label)
+        parameters = None if theta is None else [theta, phi]
+        super().__init__("r", 1, parameters, label=label, _shim_parameter_spec=self._spec)
 
-    def _define(self):
+    def _decompose(self, parameters):
         """
         gate r(θ, φ) a {u3(θ, φ - π/2, -φ + π/2) a;}
         """
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
-        from .u3 import U3Gate
 
-        q = QuantumRegister(1, "q")
-        qc = QuantumCircuit(q, name=self.name)
-        theta = self.params[0]
-        phi = self.params[1]
-        rules = [(U3Gate(theta, phi - pi / 2, -phi + pi / 2), [q[0]], [])]
-        for instr, qargs, cargs in rules:
-            qc._append(instr, qargs, cargs)
-
-        self.definition = qc
+        theta, phi = parameters
+        qc = QuantumCircuit(1, name=self.name)
+        qc.u(theta, phi - pi / 2, -phi + pi / 2, 0)
+        return qc
 
     def inverse(self):
         """Invert this gate.

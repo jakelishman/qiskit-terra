@@ -16,10 +16,8 @@ from typing import Optional, Union
 import numpy
 from qiskit.circuit.controlledgate import ControlledGate
 from qiskit.circuit.gate import Gate
-from qiskit.circuit.quantumregister import QuantumRegister
+from qiskit.circuit import CircuitInstruction
 from qiskit.qasm import pi
-from .t import TGate, TdgGate
-from .s import SGate, SdgGate
 
 
 class HGate(Gate):
@@ -50,23 +48,18 @@ class HGate(Gate):
 
     def __init__(self, label: Optional[str] = None):
         """Create new H gate."""
-        super().__init__("h", 1, [], label=label)
+        super().__init__("h", 1, label=label, _shim_parameter_spec=())
 
-    def _define(self):
+    def _decompose(self, parameters):
         """
         gate h a { u2(0,pi) a; }
         """
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
-        from .u2 import U2Gate
 
-        q = QuantumRegister(1, "q")
-        qc = QuantumCircuit(q, name=self.name)
-        rules = [(U2Gate(0, pi), [q[0]], [])]
-        for instr, qargs, cargs in rules:
-            qc._append(instr, qargs, cargs)
-
-        self.definition = qc
+        qc = QuantumCircuit(1, name=self.name)
+        qc.u(0, 0, pi, 0)
+        return qc
 
     def control(
         self,
@@ -169,10 +162,17 @@ class CHGate(ControlledGate):
     def __init__(self, label: Optional[str] = None, ctrl_state: Optional[Union[int, str]] = None):
         """Create new CH gate."""
         super().__init__(
-            "ch", 2, [], num_ctrl_qubits=1, label=label, ctrl_state=ctrl_state, base_gate=HGate()
+            "ch",
+            2,
+            [],
+            num_ctrl_qubits=1,
+            label=label,
+            ctrl_state=ctrl_state,
+            base_gate=HGate(),
+            _shim_parameter_spec=(),
         )
 
-    def _define(self):
+    def _decompose(self, parameters):
         """
         gate ch a,b {
             s b;
@@ -185,24 +185,19 @@ class CHGate(ControlledGate):
         }
         """
         # pylint: disable=cyclic-import
-        from qiskit.circuit.quantumcircuit import QuantumCircuit
-        from .x import CXGate  # pylint: disable=cyclic-import
+        from qiskit.circuit import QuantumCircuit, QuantumRegister
+        from qiskit.circuit.library import SGate, SdgGate, TGate, TdgGate, CXGate
 
         q = QuantumRegister(2, "q")
         qc = QuantumCircuit(q, name=self.name)
-        rules = [
-            (SGate(), [q[1]], []),
-            (HGate(), [q[1]], []),
-            (TGate(), [q[1]], []),
-            (CXGate(), [q[0], q[1]], []),
-            (TdgGate(), [q[1]], []),
-            (HGate(), [q[1]], []),
-            (SdgGate(), [q[1]], []),
-        ]
-        for instr, qargs, cargs in rules:
-            qc._append(instr, qargs, cargs)
-
-        self.definition = qc
+        qc._append(CircuitInstruction(SGate(), (q[1],), (), ()))
+        qc._append(CircuitInstruction(HGate(), (q[1],), (), ()))
+        qc._append(CircuitInstruction(TGate(), (q[1],), (), ()))
+        qc._append(CircuitInstruction(CXGate(), (q[0], q[1]), (), ()))
+        qc._append(CircuitInstruction(TdgGate(), (q[1],), (), ()))
+        qc._append(CircuitInstruction(HGate(), (q[1],), (), ()))
+        qc._append(CircuitInstruction(SdgGate(), (q[1],), (), ()))
+        return qc
 
     def inverse(self):
         """Return inverted CH gate (itself)."""

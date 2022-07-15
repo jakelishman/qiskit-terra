@@ -14,6 +14,7 @@
 
 from typing import Optional
 import numpy as np
+from qiskit.circuit import CircuitInstruction
 from qiskit.circuit.gate import Gate
 from qiskit.circuit.quantumregister import QuantumRegister
 
@@ -78,9 +79,9 @@ class iSwapGate(Gate):
 
     def __init__(self, label: Optional[str] = None):
         """Create new iSwap gate."""
-        super().__init__("iswap", 2, [], label=label)
+        super().__init__("iswap", 2, label=label, _shim_parameter_spec=())
 
-    def _define(self):
+    def _decompose(self parameters):
         """
         gate iswap a,b {
             s q[0];
@@ -92,25 +93,18 @@ class iSwapGate(Gate):
         }
         """
         # pylint: disable=cyclic-import
-        from qiskit.circuit.quantumcircuit import QuantumCircuit
-        from .h import HGate
-        from .s import SGate
-        from .x import CXGate
+        from qiskit.circuit import QuantumCircuit
+        from qiskit.circuit.library import HGate, SGate, CXGate
 
         q = QuantumRegister(2, "q")
         qc = QuantumCircuit(q, name=self.name)
-        rules = [
-            (SGate(), [q[0]], []),
-            (SGate(), [q[1]], []),
-            (HGate(), [q[0]], []),
-            (CXGate(), [q[0], q[1]], []),
-            (CXGate(), [q[1], q[0]], []),
-            (HGate(), [q[1]], []),
-        ]
-        for instr, qargs, cargs in rules:
-            qc._append(instr, qargs, cargs)
-
-        self.definition = qc
+        qc._append(CircuitInstruction(SGate(), (q[0],), (), ()))
+        qc._append(CircuitInstruction(SGate(), (q[1],), (), ()))
+        qc._append(CircuitInstruction(HGate(), (q[0],), (), ()))
+        qc._append(CircuitInstruction(CXGate(), (q[0], q[1]), (), ()))
+        qc._append(CircuitInstruction(CXGate(), (q[1], q[0]), (), ()))
+        qc._append(CircuitInstruction(HGate(), (q[1],), (), ()))
+        return qc
 
     def __array__(self, dtype=None):
         """Return a numpy.array for the iSWAP gate."""

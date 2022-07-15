@@ -14,7 +14,13 @@
 
 
 from qiskit.qasm import pi
-from qiskit.circuit import EquivalenceLibrary, Parameter, QuantumCircuit, QuantumRegister
+from qiskit.circuit import (
+    EquivalenceLibrary,
+    Parameter,
+    QuantumCircuit,
+    QuantumRegister,
+    CircuitInstruction,
+)
 
 from qiskit.quantum_info.synthesis.ion_decompose import cnot_rxx_decompose
 
@@ -76,7 +82,7 @@ _sel = StandardEquivalenceLibrary = EquivalenceLibrary()
 #    └───┘        └─────────┘
 q = QuantumRegister(1, "q")
 def_h = QuantumCircuit(q)
-def_h.append(U2Gate(0, pi), [q[0]], [])
+def_h.append(U2Gate(), [q[0]], [], [0, pi])
 _sel.add_equivalence(HGate(), def_h)
 
 # CHGate
@@ -87,16 +93,16 @@ _sel.add_equivalence(HGate(), def_h)
 #      └───┘          └───┘└───┘└───┘└───┘└─────┘└───┘└─────┘
 q = QuantumRegister(2, "q")
 def_ch = QuantumCircuit(q)
-for inst, qargs, cargs in [
-    (SGate(), [q[1]], []),
-    (HGate(), [q[1]], []),
-    (TGate(), [q[1]], []),
-    (CXGate(), [q[0], q[1]], []),
-    (TdgGate(), [q[1]], []),
-    (HGate(), [q[1]], []),
-    (SdgGate(), [q[1]], []),
-]:
-    def_ch.append(inst, qargs, cargs)
+for instruction in (
+    CircuitInstruction(SGate(), [q[1]], [], []),
+    CircuitInstruction(HGate(), [q[1]], [], []),
+    CircuitInstruction(TGate(), [q[1]], [], []),
+    CircuitInstruction(CXGate(), [q[0], q[1]], [], []),
+    CircuitInstruction(TdgGate(), [q[1]], [], []),
+    CircuitInstruction(HGate(), [q[1]], [], []),
+    CircuitInstruction(SdgGate(), [q[1]], [], []),
+):
+    def_ch._append(instruction)
 _sel.add_equivalence(CHGate(), def_ch)
 
 # PhaseGate

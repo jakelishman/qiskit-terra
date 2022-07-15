@@ -32,6 +32,7 @@ The circuit itself keeps this context.
 """
 
 import copy
+import types
 from itertools import zip_longest
 from typing import List, Iterable
 
@@ -270,7 +271,112 @@ class Instruction:
 
     def _define(self):
         """Populates self.definition with a decomposition of this gate."""
-        pass
+        # If the gate has overridden the ``_decompose`` method, we defer to trying to call that, so
+        # classes can upgrade to the new form without additional boilerplate.  `_decompose` may be
+        # defined as a method, so we need `__func__` for the reference check.
+        if getattr(self._decompose, "__func__ ") is Instruction._decompose:
+            # In this case, neither `_define` or `_decompose` has been overridden, so nothing to do.
+            return
+        # `_decompose` is also defined to return `None` if no decomposition is possible.
+        self._definition = self._decompose(self.params)
+
+    # method-hidden is disabled below because this method is meant to be overridden, potentially
+    # even on an instance-by-instance basis (in the case of people constructing `Instruction`
+    # directly.
+    def _decompose(self, parameters: List):  # pylint: disable=method-hidden
+        """Virtual method that can be overridden by subclasses to provide a decomposition of this
+        instruction in terms of other instructions.
+
+        The ``parameters`` passed to this method are guaranteed to be the correct number and the
+        correct types for the instruction.  This method should return either a
+        :class:`.QuantumCircuit` of the decomposition, or ``None`` if no decomposition is
+        possible.
+
+        The default implementation of this method monkey-patches the ``params`` and ``_definition``
+        fields of ``self`` to use the legacy :attr:`Instruction.definition` as the decomposition
+        method.
+
+        Args:
+            parameters (List): a list of the correct length, containing the values of the parameters
+                to use.  This has already been validated.
+
+        Returns:
+            Optional[QuantumCircuit]: if a single hierarchical decomposition is known, a
+            :class:`.QuantumCircuit` representing that decomposition.  If a decomposition is not
+            possible, such as if the instruction is opaque or a simulator directive, then ``None``.
+        """
+        # This is very hacky, but is in place to facilitate a clean transition to the parameterised
+        # form of providing a decomposition, so subclasses that implement `_define()` (which very
+        # unfortunately for us is required to mutate `self` rather than return its value) will
+        # continue to work.
+        old_definition = self._definition
+        self._definition = None
+        try:
+            old_parameters = tuple(self.params)
+            try:
+                self.params = parameters
+                return self.definition
+            finally:
+                self.params = old_parameters
+        finally:
+            self._definition = old_definition
+
+    def decompose(self, parameters: Iterable):
+        """Get a :class:`.QuantumCircuit` representation of this instruction in terms of other
+        instructions, with the given parameters.
+
+        Args:
+            parameters (Iterable): the parameters that should be used to provide the decomposition.
+
+        Returns:
+            Optional[QuantumCircuit]: the circuit representation in terms of other instructions, if
+            possible.  If this instruction has no decomposition, ``None`` will be returned instead.
+
+        Raises:
+            ValueError: if an incorrect number of parameters are given.
+            TypeError: if any of the parameters have invalid types for this instruction.
+
+        .. seealso::
+
+            :attr:`Instruction.decompositions`
+                In-instance access to the rules in the current-session equivalence library for this
+                instruction.  This is a more general form of :meth:`decompose`.
+
+            :class:`.SessionEquivalenceLibrary`
+                General documentation on equivalence libraries for providing options for the
+                decomposition.
+
+        .. note::
+
+            Subclasses of :class:`Instruction` should not override this method to provide their
+            decomposition.  They should instead override the ``_decomposition`` virtual method.
+        """
+        return self._decompose(self.bind_parameters(parameters))
+
+    def set_decomposition_from_parameterized_circuit(self, circuit, parameter_order):
+        """Override the :meth:`_decompose` method of this object with a callable that will bind the
+        dynamic parameters used by this instruction to the :class:`.Parameter` instances in the
+        given ``circuit``.  The order the parameters are supplied in is controlled by
+        ``parameter_order``.
+
+        Args:
+            circuit (QuantumCircuit): the circuit that will be used as the base.  This should be
+                parameterized by the same number of :class:`.Parameter`\\ s as this instruction
+                takes as dynamic arguments.
+            parameter_order (Iterable[Parameter]): in order, the parameters that the arguments to
+                :meth:`_decompose` should be bound to.  This may not be the same as the order given
+                by ``circuit.parameters`` if parameters should not be bound in alphabetical order.
+
+        Raises:
+            CircuitError: if the ``parameter_order`` does not match the number of dynamic parameters
+                this instruction takes.
+        """
+        if len(parameter_order) != len(self._parameter_spec):
+            raise CircuitError(
+                f"instruction '{self.name}' takes '{len(self._parameter_spec)}' dynamic parameters,"
+                f" but this decomposition binds {len(parameter_order)}."
+            )
+        self._decompose = _ParameterizedCircuitDecomposer(circuit, parameter_order)
 
     @property
     def params(self):
@@ -635,3 +741,14 @@ class Instruction:
     def num_clbits(self, num_clbits):
         """Set num_clbits."""
         self._num_clbits = num_clbits
+
+
+class _ParameterizedCircuitDecomposer:
+    __slots__ = ("circuit", "parameter_order")
+
+    def __init__(self, circuit, parameter_order):
+        self.circuit = circuit
+        self.parameter_order = tuple(parameter_order)
+
+    def __call__(self, parameters):
+        return self.circuit.assign_parameters(dict(zip(self.parameter_order, parameters)))
