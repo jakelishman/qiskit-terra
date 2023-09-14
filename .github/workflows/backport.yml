@@ -4,7 +4,7 @@ name: Backport metadata
 # do useful things like copying across the tagged labels and milestone from the base PR.
 
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
     branches:
@@ -30,7 +30,7 @@ jobs:
           IFS='-' read -ra split <<< "${{ github.ref_name }}"
           base_pr=${split[-1]}
 
-          gh pr view $base_pr --json labels,milestone > base_pr.json
+          gh pr --repo "${{ github.repository }}" view "$base_pr" --json labels,milestone > base_pr.json
 
           add_labels="$(jq '[.labels[].name] - ["stable backport potential"] | join(",")' base_pr.json)"
           echo "New labels: '$add_labels'"
@@ -43,9 +43,9 @@ jobs:
           # The GitHub API is sometimes weird about empty values - the REST API certainly treats
           # "add-label" with an empty input not as a no-op but as a clear of all labels.
           if [[ -n "$add_labels" && -n "$milestone" ]]; then
-            gh pr edit ${{ github.event.number }} --add-label "$add_labels" --milestone "$milestone"
+            gh pr --repo "${{ github.repository }}" edit "${{ github.event.number }}" --add-label "$add_labels" --milestone "$milestone"
           elif [[ -n "$add_labels" ]]; then
-            gh pr edit ${{ github.event.number }} --add-label "$add_labels"
+            gh pr --repo "${{ github.repository }}" edit "${{ github.event.number }}" --add-label "$add_labels"
           elif [[ -n "$milestone" ]]; then
-            gh pr edit ${{ github.event.number }} --milestone "$milestone"
+            gh pr --repo "${{ github.repository }}" edit "${{ github.event.number }}" --milestone "$milestone"
           fi
