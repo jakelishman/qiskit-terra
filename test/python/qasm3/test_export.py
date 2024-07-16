@@ -443,11 +443,11 @@ class TestCircuitQASM3(QiskitTestCase):
 
     def test_multiple_pauli_evolution_gates(self):
         """Pauli evolution gates should be detected as distinct."""
-        t = ParameterVector("t", 3)
+        vec = ParameterVector("t", 3)
         qc = QuantumCircuit(2)
-        qc.append(PauliEvolutionGate(Pauli("XX"), t[0]), [0, 1])
-        qc.append(PauliEvolutionGate(Pauli("YY"), t[1]), [0, 1])
-        qc.append(PauliEvolutionGate(Pauli("ZZ"), t[2]), [0, 1])
+        qc.append(PauliEvolutionGate(Pauli("XX"), vec[0]), [0, 1])
+        qc.append(PauliEvolutionGate(Pauli("YY"), vec[1]), [0, 1])
+        qc.append(PauliEvolutionGate(Pauli("ZZ"), vec[2]), [0, 1])
         expected = """\
 OPENQASM 3.0;
 include "stdgates.inc";
