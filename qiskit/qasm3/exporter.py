@@ -122,6 +122,7 @@ _RESERVED_KEYWORDS = frozenset(
 # actively _trying_ to break us (fingers crossed).
 _VALID_IDENTIFIER = re.compile(r"(\$[\d]+|[\w][\w\d]*)", flags=re.U)
 _BAD_IDENTIFIER_CHARACTERS = re.compile(r"[^\w\d]", flags=re.U)
+_VALID_IDENTIFIER_NO_HW_QUBIT = re.compile(r"([\w][\w\d]*)", flags=re.U)
 
 
 class Exporter:
@@ -324,22 +325,30 @@ class SymbolTable:
             and name not in _RESERVED_KEYWORDS
         )
 
-    def escaped_declarable_name(self, name: str, *, allow_rename: bool, unique: bool = False):
+    def escaped_declarable_name(
+        self, name: str, *, allow_rename: bool, unique: bool = False, allow_hw_qubit: bool = True
+    ):
         """Get an identifier based on ``name`` that can be safely shadowed within this scope.
 
         If ``unique`` is ``True``, then the name is required to be unique across all live scopes,
-        not just able to be redefined."""
+        not just able to be redefined.
+        If ``allow_hw_qubit`` is ``True`` then the leading ``$`` of a hardware qubit identifier will
+        not be escaped (that is, replaced with ``_``)."""
         name_allowed = (
             (lambda name: not self.symbol_defined(name)) if unique else self.can_shadow_symbol
         )
+        if allow_hw_qubit:
+            valid_identifier = _VALID_IDENTIFIER
+        else:
+            valid_identifier = _VALID_IDENTIFIER_NO_HW_QUBIT
         if allow_rename:
-            if not _VALID_IDENTIFIER.fullmatch(name):
+            if not valid_identifier.fullmatch(name):
                 name = "_" + _BAD_IDENTIFIER_CHARACTERS.sub("_", name)
             base = name
             while not name_allowed(name):
                 name = f"{base}_{next(self._counter)}"
             return name
-        if not _VALID_IDENTIFIER.fullmatch(name):
+        if not valid_identifier.fullmatch(name):
             raise QASM3ExporterError(f"cannot use '{name}' as a name; it is not a valid identifier")
         if name in _RESERVED_KEYWORDS:
             raise QASM3ExporterError(f"cannot use the keyword '{name}' as a variable name")
@@ -415,7 +424,9 @@ class SymbolTable:
         "basis gate" that assumes that all calling signatures are valid and that all gates of this
         name are exactly compatible, which is somewhat dangerous."""
         # Validate the name is usable.
-        name = self.escaped_declarable_name(name, allow_rename=False)
+        name = self.escaped_declarable_name(
+            name, allow_rename=False, unique=False, allow_hw_qubit=False
+        )
         ident = ast.Identifier(name)
         if gate is None:
             self.gates[name] = GateDefinition(None, None)
@@ -438,7 +449,9 @@ class SymbolTable:
     ) -> ast.Identifier:
         """Register the given gate in the symbol table, using the given components to build up the
         full AST definition."""
-        name = self.escaped_declarable_name(name, allow_rename=True)
+        name = self.escaped_declarable_name(
+            name, allow_rename=True, unique=False, allow_hw_qubit=False
+        )
         ident = ast.Identifier(name)
         self.gates[name] = GateDefinition(
             source, ast.QuantumGateDefinition(ident, tuple(params), tuple(qubits), body)
