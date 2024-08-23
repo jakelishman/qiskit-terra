@@ -99,9 +99,9 @@ class TranslateParameterizedGates(TransformationPass):
 
         # get the default equivalence library, if none has been set
         if equivalence_library is None:
-            from qiskit.circuit.library.standard_gates.equivalence_library import _sel
+            from qiskit.circuit import SessionEquivalenceLibrary
 
-            equivalence_library = _sel
+            equivalence_library = SessionEquivalenceLibrary
 
         # The target takes precedence over the supported_gates argument. If neither are set,
         # raise an error.

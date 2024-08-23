@@ -547,25 +547,17 @@ class RCCXGate(SingletonGate):
         """
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
-        from .u1 import U1Gate
-        from .u2 import U2Gate
 
-        q = QuantumRegister(3, "q")
-        qc = QuantumCircuit(q, name=self.name)
-        rules = [
-            (U2Gate(0, pi), [q[2]], []),  # H gate
-            (U1Gate(pi / 4), [q[2]], []),  # T gate
-            (CXGate(), [q[1], q[2]], []),
-            (U1Gate(-pi / 4), [q[2]], []),  # inverse T gate
-            (CXGate(), [q[0], q[2]], []),
-            (U1Gate(pi / 4), [q[2]], []),
-            (CXGate(), [q[1], q[2]], []),
-            (U1Gate(-pi / 4), [q[2]], []),  # inverse T gate
-            (U2Gate(0, pi), [q[2]], []),  # H gate
-        ]
-        for instr, qargs, cargs in rules:
-            qc._append(instr, qargs, cargs)
-
+        qc = QuantumCircuit(3, name=self.name)
+        qc.h(2)
+        qc.t(2)
+        qc.cx(1, 2)
+        qc.tdg(2)
+        qc.cx(0, 2)
+        qc.t(2)
+        qc.cx(1, 2)
+        qc.tdg(2)
+        qc.h(2)
         self.definition = qc
 
     def __eq__(self, other):
