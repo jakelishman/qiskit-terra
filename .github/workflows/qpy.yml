@@ -1,17 +1,20 @@
-name: QPY backwards compatibility
+name: QPY
 
 on:
-  pull_request:
   push:
     branches:
       - 'main'
       - 'stable/*'
+  pull_request:
+concurrency:
+  group: ${{ github.repository }}-${{ github.ref }}-${{ github.head_ref }}-${{ github.workflow }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  qpy:
-    name: QPY backwards compatibility
+  backward_compat:
+    if: github.repository_owner == 'Qiskit'
+    name: Backwards compatibility
     runs-on: ubuntu-latest
-    if: github.repository == 'Qiskit/qiskit'
 
     steps:
       - uses: actions/checkout@v4
