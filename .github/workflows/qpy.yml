@@ -3,8 +3,8 @@ name: QPY
 on:
   push:
     branches:
-      - 'main'
-      - 'stable/*'
+      - 'qpy-cache-test/base'
+      - 'qpy-cache-test/stable'
   pull_request:
   merge_group:
 concurrency:
@@ -13,7 +13,6 @@ concurrency:
 
 jobs:
   backward_compat:
-    if: github.repository_owner == 'Qiskit'
     name: Backwards compatibility
     runs-on: ubuntu-latest
 
