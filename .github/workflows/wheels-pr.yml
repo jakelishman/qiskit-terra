@@ -16,8 +16,16 @@ concurrency:
 
 jobs:
   test-wheels:
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ci: test wheels') }}
+    # if: ${{ contains(github.event.pull_request.labels.*.name, 'ci: test wheels') }}
     name: Build
     uses: './.github/workflows/wheels-build.yml'
     with:
       default-action: "build"
+
+  show-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo <<EOF
+          ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          EOF
