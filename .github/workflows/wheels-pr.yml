@@ -21,3 +21,4 @@ jobs:
     uses: './.github/workflows/wheels-build.yml'
     with:
       default-action: "build"
+      pgo: false
