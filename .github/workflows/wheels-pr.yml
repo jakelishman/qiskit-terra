@@ -19,3 +19,8 @@ jobs:
     uses: './.github/workflows/wheels-build.yml'
     with:
       default-action: "build"
+
+  show-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.even.pull_request.labels.*.name }}"
