@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test-wheels:
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'ci: test wheels') }}
+    # if: ${{ contains(github.event.pull_request.labels.*.name, 'ci: test wheels') }}
     uses: './.github/workflows/wheels-build.yml'
     with:
       default-action: "build"
