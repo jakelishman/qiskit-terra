@@ -112,17 +112,20 @@ jobs:
         #
         # Beware that the heredoc is configured to expand bash variables, but cibuildwheel has
         # special handling for certain variables (`$PATH`, in particular), so you may need to escape
-        # some dollar signs to pass those through to cibuildwheel as variables, not expanded.
-        # Windows paths with backslashes need to be escaped twice - once to get the backslash
-        # through the heredoc, and once to get it through the shell expansion in cibuildwheel.
+        # some dollar signs to pass those through to cibuildwheel as variables, or use single quotes
+        # to prevent shell expansion.
         run: |
+          set -e
+          mkdir -p "$PGO_WORK_DIR"
+
           cat >>"$GITHUB_ENV" <<EOF
-          CIBW_BEFORE_BUILD=bash ./tools/build_pgo.sh /tmp/pgo-data/merged.profdata
-          CIBW_BEFORE_BUILD_WINDOWS=bash ./tools/build_pgo.sh /tmp/pgo-data/merged.profdata && cp /tmp/pgo-data/merged.profdata "\$HOME"
-          CIBW_ENVIRONMENT=RUSTUP_TOOLCHAIN=stable RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata -Cllvm-args=-pgo-warn-missing-function"
-          CIBW_ENVIRONMENT_LINUX=RUSTUP_TOOLCHAIN=stable RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata -Cllvm-args=-pgo-warn-missing-function" PATH="\$PATH:\$HOME/.cargo/bin" CARGO_NET_GIT_FETCH_WITH_CLI="true"
-          CIBW_ENVIRONMENT_WINDOWS=RUSTUP_TOOLCHAIN=stable RUSTFLAGS="-Cprofile-use='\$HOME\\\\merged.profdata' -Cllvm-args=-pgo-warn-missing-function"
+          CIBW_BEFORE_BUILD=bash ./tools/build_pgo.sh $PGO_WORK_DIR $PGO_OUT_PATH
+          CIBW_ENVIRONMENT=RUSTUP_TOOLCHAIN=stable RUSTFLAGS='-Cprofile-use=$PGO_OUT_PATH -Cllvm-args=-pgo-warn-missing-function'
+          CIBW_ENVIRONMENT_LINUX=RUSTUP_TOOLCHAIN=stable RUSTFLAGS='-Cprofile-use=$PGO_OUT_PATH -Cllvm-args=-pgo-warn-missing-function' PATH="\$PATH:\$HOME/.cargo/bin" CARGO_NET_GIT_FETCH_WITH_CLI="true"
           EOF
+        env:
+          PGO_WORK_DIR: ${{ github.workspace }}/pgo-data
+          PGO_OUT_PATH: ${{ github.workspace }}/merged.profdata
       - uses: pypa/cibuildwheel@v2.19.2
       - uses: actions/upload-artifact@v4
         with:
