@@ -25,10 +25,10 @@ fi
 # Build with instrumentation
 pip install -U -c constraints.txt setuptools-rust wheel setuptools
 RUSTFLAGS="-Cprofile-generate=$work_dir" pip install --prefer-binary -c constraints.txt -r requirements-dev.txt -e .
-RUSTFLAGS="-Cprofile-generate=$work_dir" python setup.py build_rust --release --inplace
+# RUSTFLAGS="-Cprofile-generate=$work_dir" python setup.py build_rust --release --inplace
 # Run profile data generation
 
-QISKIT_PARALLEL=FALSE stestr run --abbreviate
+# QISKIT_PARALLEL=FALSE stestr run --abbreviate
 
 python tools/pgo_scripts/test_utility_scale.py
 
