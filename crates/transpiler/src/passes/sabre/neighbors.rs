@@ -132,9 +132,10 @@ impl Neighbors {
                 neighbors.push(neighbor);
             }
             partition.push(neighbors.len());
+            // TODO: if deleting this, update documentation.
             // Sort per neighbour in the vague hope that branch predicition later will be more
             // reliable, or memory access patterns will be more predictable.
-            neighbors[partition[partition.len() - 2]..partition[partition.len() - 1]].sort();
+            // neighbors[partition[partition.len() - 2]..partition[partition.len() - 1]].sort();
         }
         Self {
             neighbors,
