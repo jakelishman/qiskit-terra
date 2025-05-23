@@ -261,7 +261,7 @@ class SabreLayout(TransformationPass):
         ]
         heuristic = (
             Heuristic(attempt_limit=10 * self.target.num_qubits)
-            .with_basic(1.0, SetScaling.Size)
+            .with_basic(1.0, SetScaling.Constant)
             .with_lookahead(0.5, 20, SetScaling.Size)
             .with_decay(0.001, 5)
         )
