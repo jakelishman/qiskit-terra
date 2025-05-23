@@ -144,7 +144,7 @@ pub fn sabre_layout_and_routing(
                         seed,
                         max_iterations,
                         num_swap_trials,
-                        allow_parallel && num_layout_trials == 1,
+                        allow_parallel && num_swap_trials > 1,
                         &starting_layouts[index],
                     ),
                 )
