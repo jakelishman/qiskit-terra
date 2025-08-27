@@ -24,11 +24,31 @@ where
     m.add_submodule(&new_mod)
 }
 
+#[pyfunction]
+fn transpile<'py>(
+    py: Python<'py>,
+    qc: &::qiskit_circuit::circuit_data::CircuitData,
+    target: &::qiskit_transpiler::target::Target,
+    optimization_level: u8,
+    seed: u64,
+) -> PyResult<(
+    ::qiskit_circuit::circuit_data::CircuitData,
+    Bound<'py, PyAny>,
+)> {
+    let (qc, layout) =
+        ::qiskit_transpiler::transpile(qc, target, optimization_level.into(), None, Some(seed))
+            .unwrap();
+    layout
+        .to_py_native(py, qc.qubits().objects())
+        .map(|layout| (qc, layout))
+}
+
 // Formatting is off here so every module import can just be a single line in sorted order, to help
 // avoid merge conflicts as modules are added.
 #[rustfmt::skip]
 #[pymodule]
 fn _accelerate(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(transpile, m)?)?;
     add_submodule(m, ::qiskit_transpiler::passes::alap_schedule_analysis_mod, "alap_schedule_analysis")?;
     add_submodule(m, ::qiskit_transpiler::passes::apply_layout_mod, "apply_layout")?;
     add_submodule(m, ::qiskit_transpiler::passes::barrier_before_final_measurements_mod, "barrier_before_final_measurement")?;
