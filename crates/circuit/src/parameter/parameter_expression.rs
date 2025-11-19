@@ -170,6 +170,12 @@ impl ParameterExpression {
         Self { expr, name_map }
     }
 
+    /// Count the number of operations in the expression tree.
+    #[inline]
+    pub fn num_ops(&self) -> usize {
+        self.expr.num_ops()
+    }
+
     /// Construct from a [Symbol].
     pub fn from_symbol(symbol: Symbol) -> Self {
         Self {
@@ -825,6 +831,15 @@ impl PyParameterExpression {
     ///     ``True`` is this expression corresponds to a symbol, ``False`` otherwise.
     pub fn is_symbol(&self) -> bool {
         matches!(self.inner.expr, SymbolExpr::Symbol(_))
+    }
+
+    /// Count the number of operations in the expression tree.
+    ///
+    /// This gives a very coarse and approximate estimation of the "complexity" of evaluating an
+    /// expression.  In practice, many other factors influence the performance of expression
+    /// evaluation, but this number is offered as a very casual heuristic.
+    pub fn num_ops(&self) -> usize {
+        self.inner.num_ops()
     }
 
     /// Cast this expression to a numeric value.

@@ -351,6 +351,26 @@ impl SymbolExpr {
         }
     }
 
+    /// Count the number of operations in the expression tree.
+    pub fn num_ops(&self) -> usize {
+        let mut count = 0;
+        let mut stack = vec![self];
+        while let Some(elem) = stack.pop() {
+            count += 1;
+            match elem {
+                Self::Symbol(_) | Self::Value(_) => (),
+                Self::Unary { op: _, expr } => {
+                    stack.push(expr);
+                }
+                Self::Binary { op: _, lhs, rhs } => {
+                    stack.push(rhs);
+                    stack.push(lhs);
+                }
+            }
+        }
+        count
+    }
+
     /// evaluate the equation
     /// if recursive is false, only this node will be evaluated
     pub fn eval(&self, recurse: bool) -> Option<Value> {
