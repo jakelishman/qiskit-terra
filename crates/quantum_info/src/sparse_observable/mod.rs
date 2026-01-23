@@ -12,6 +12,7 @@
 
 mod lookup;
 
+use dashmap::DashMap;
 use hashbrown::{HashMap, HashSet};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -490,17 +491,15 @@ impl SparseObservable {
     ///
     /// Recall that two [SparseObservable]s that have different term orders can still represent the
     /// same object.  Use [canonicalize] to apply a canonical ordering to the terms.
-    pub fn iter(&'_ self) -> impl ExactSizeIterator<Item = SparseTermView<'_>> + '_ {
-        self.coeffs.iter().enumerate().map(|(i, coeff)| {
-            let start = self.boundaries[i];
-            let end = self.boundaries[i + 1];
-            SparseTermView {
-                num_qubits: self.num_qubits,
-                coeff: *coeff,
-                bit_terms: &self.bit_terms[start..end],
-                indices: &self.indices[start..end],
-            }
-        })
+    pub fn iter(&'_ self) -> impl ExactSizeIterator<Item = SparseTermView<'_>> {
+        (0..self.num_terms()).map(|i| self.term(i))
+    }
+
+    /// Get a Rayon parallel iterator over the individual terms of the operator.
+    ///
+    /// See [iter] for more information for more information
+    pub fn par_iter(&'_ self) -> impl IndexedParallelIterator<Item = SparseTermView<'_>> {
+        (0..self.num_terms()).into_par_iter().map(|i| self.term(i))
     }
 
     /// Get an iterator over the individual terms of the operator that allows in-place mutation.
@@ -617,22 +616,37 @@ impl SparseObservable {
     ///
     /// This function is idempotent.
     pub fn canonicalize(&self, tol: f64) -> SparseObservable {
-        let mut terms = HashMap::with_capacity(self.num_terms());
-        for term in self.iter() {
-            terms
-                .entry(term.canonical_key())
-                .and_modify(|c| *c += term.coeff)
-                .or_insert(term.coeff);
-        }
-        let mut vec = terms
-            .into_iter()
-            .filter(|(_, coeff)| coeff.norm_sqr() > tol * tol)
-            .collect::<Vec<_>>();
-        if getenv_use_multiple_threads() {
+        let vec = if getenv_use_multiple_threads() {
+            let terms =
+                DashMap::with_capacity_and_hasher(self.num_terms(), ahash::RandomState::new());
+            self.par_iter().for_each(|term| {
+                terms
+                    .entry(term.canonical_key())
+                    .and_modify(|c| *c += term.coeff)
+                    .or_insert(term.coeff);
+            });
+            let mut vec = terms
+                .into_par_iter()
+                .filter(|(_, coeff)| coeff.norm_sqr() > tol * tol)
+                .collect::<Vec<_>>();
             vec.par_sort_unstable_by_key(|&(k, _)| k);
+            vec
         } else {
+            let mut terms =
+                HashMap::with_capacity_and_hasher(self.num_terms(), ahash::RandomState::new());
+            self.iter().for_each(|term| {
+                terms
+                    .entry(term.canonical_key())
+                    .and_modify(|c| *c += term.coeff)
+                    .or_insert(term.coeff);
+            });
+            let mut vec = terms
+                .into_iter()
+                .filter(|(_, coeff)| coeff.norm_sqr() > tol * tol)
+                .collect::<Vec<_>>();
             vec.sort_unstable_by_key(|&(k, _)| k);
-        }
+            vec
+        };
         let mut out = SparseObservable::zero(self.num_qubits);
         for ((indices, bit_terms), coeff) in vec {
             out.coeffs.push(coeff);
