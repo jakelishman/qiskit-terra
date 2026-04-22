@@ -811,13 +811,7 @@ impl PyParameterExpression {
     }
 
     pub fn coerce_into_py(&self, py: Python) -> PyResult<Py<PyAny>> {
-        if let Ok(value) = self.inner.try_to_value(true) {
-            match value {
-                Value::Int(i) => Ok(PyInt::new(py, i).unbind().into_any()),
-                Value::Real(r) => Ok(PyFloat::new(py, r).unbind().into_any()),
-                Value::Complex(c) => Ok(PyComplex::from_complex_bound(py, c).unbind().into_any()),
-            }
-        } else if let Ok(symbol) = self.inner.try_to_symbol() {
+        if let Ok(symbol) = self.inner.try_to_symbol() {
             if symbol.index.is_some() {
                 Ok(Py::new(py, PyParameterVectorElement::from_symbol(symbol))?.into_any())
             } else {

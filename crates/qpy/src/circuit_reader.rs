@@ -48,7 +48,6 @@ use qiskit_circuit::operations::{
 };
 use qiskit_circuit::packed_instruction::{PackedInstruction, PackedOperation};
 use qiskit_circuit::parameter::parameter_expression::ParameterExpression;
-use qiskit_circuit::parameter::symbol_expr;
 use qiskit_circuit::var_stretch_container::{StretchType, VarType};
 use qiskit_circuit::{Block, classical, imports};
 use qiskit_circuit::{Clbit, Qubit};
@@ -292,13 +291,6 @@ pub fn instruction_values_to_params(
                 match value.as_le() {
                     // TODO: is the "as_le" here enough to solve the "params are little endian" problem?
                     GenericValue::Float64(float) => Ok(Param::Float(float)),
-                    GenericValue::Int64(int) => {
-                        let value_expression =
-                            symbol_expr::SymbolExpr::Value(symbol_expr::Value::Int(int));
-                        Ok(Param::ParameterExpression(Arc::new(
-                            ParameterExpression::from_symbol_expr(value_expression),
-                        )))
-                    }
                     GenericValue::ParameterExpression(exp) => Ok(Param::ParameterExpression(exp)),
                     GenericValue::ParameterExpressionSymbol(symbol) => {
                         Ok(Param::ParameterExpression(Arc::new(
