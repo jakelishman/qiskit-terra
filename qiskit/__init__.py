@@ -14,7 +14,10 @@
 # The documentation of the root namespace is manual in `docs/apidoc/root.rst`, so that the
 # :mod:`qiskit` Sphinx cross-reference can more easily point to the top-level API table in our
 # documentation build.
-"""Main Qiskit public functionality."""
+
+"""Main Qiskit public functionality.
+
+Now with an extra comment line."""
 
 import importlib.metadata
 import importlib.util
