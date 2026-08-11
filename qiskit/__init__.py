@@ -19,6 +19,8 @@
 
 Now with an extra comment line."""
 
+# ... and an extra text comment below.
+
 import importlib.metadata
 import importlib.util
 import os
