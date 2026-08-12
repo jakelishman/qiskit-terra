@@ -984,3 +984,12 @@ class TestParameterExpression(QiskitTestCase):
         b = Parameter("b")
         expr = a + b
         self.assertEqual(expr, expr.simplify())
+
+    def test_deep_string_parse(self):
+        """Test that the string parser can handle very deep expressions."""
+        a = Parameter("a")
+        expr = "-(" * 1_000_000 + "a" + ")" * 1_000_000
+        # This is an explicitly private constructor, but the purpose of the test is for _any_ string
+        # constructor; we can change it over to a new API if/when we expose one.
+        out = ParameterExpression({"a": a}, expr)
+        self.assertEqual(out, a)
