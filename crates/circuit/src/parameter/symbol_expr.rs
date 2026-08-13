@@ -10,16 +10,16 @@
 // copyright notice, and modified files need to carry a notice indicating
 // that they have been altered from the originals.
 
-use hashbrown::HashMap;
 use std::borrow::Cow;
 use std::cmp::{Ord, Ordering, PartialOrd};
 use std::convert::From;
-use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, Div, Mul, Neg, Sub};
-use std::sync::{Arc, atomic};
+use std::sync::{Arc, LazyLock, atomic};
+use std::{fmt, mem};
 use uuid::Uuid;
 
+use hashbrown::HashMap;
 use num_complex::Complex64;
 use pyo3::prelude::*;
 
@@ -208,6 +208,121 @@ pub enum SymbolExpr {
         lhs: Arc<SymbolExpr>,
         rhs: Arc<SymbolExpr>,
     },
+}
+
+// The derived `Drop` is naturally recursive, which is slow and will overflow the stack on
+// deeply nested expressions.  We instead need to iterate through a dropping expression, clearing
+// out the recursive structure iteratively in a safe order before allowing the final drop glue.
+impl Drop for SymbolExpr {
+    fn drop(&mut self) {
+        // There's no recursive worries for `Symbol` or `Value`, or the `UnaryOp` or `BinaryOp`
+        // elements; it's just the `Arc<SymbolExpr>` parts that are an issue.  `Unary` is easy
+        // enough; we replace `expr` with a non-recursive object, allow _that_ `Unary` to drop, then
+        // iterate onto the previous content of `expr`.  With `Binary`, we need to depth-first
+        // traverse the drops, but we _must_ do that non-recursively, and we _want_ to do that
+        // without allocating in the `Drop` implementation.
+        //
+        // Without loss of generality, let's assume we're now dealing only with `Binary`.  We
+        // traverse the nodes in depth-first, left-first order, and drop each node in post order.
+        // We "reuse" the `lhs` pointer of each `Binary` we need to walk through to store its
+        // parent:
+
+        // Arbitrary `Arc<SymbolExpr>` we use that never drops (or would be non-recursive if it
+        // does).  We use this in the way a sole-owning tree might use a null pointer.  There's only
+        // ever one of these per process, so on average there's no heap allocation per `Drop` call.
+        static NULL: LazyLock<Arc<SymbolExpr>> =
+            LazyLock::new(|| Arc::new(SymbolExpr::Value(Value::Int(0))));
+
+        let mut cur: Option<Arc<Self>>;
+        // Always a `Binary` variant; we never need to backtrack to it if it's 0- or 1-ary.
+        let mut cur_parent: Option<Arc<Self>> = None;
+        // If the root node is a `Binary`, we put its rhs here, because we can't store `self` in
+        // `cur_parent` without an `Arc`.
+        let mut root_rhs: Option<Arc<Self>>;
+
+        (cur, root_rhs) = match self {
+            Self::Symbol(_) | Self::Value(_) => (None, None),
+            Self::Unary { op: _, expr } => (Some(mem::replace(expr, Arc::clone(&NULL))), None),
+            Self::Binary { op: _, lhs, rhs } => (
+                Some(mem::replace(lhs, Arc::clone(&NULL))),
+                Some(mem::replace(rhs, Arc::clone(&NULL))),
+            ),
+        };
+
+        // Call when `cur` is completely ready or unable to drop, and we need to walk up the tree
+        // and find the next node that needs to be cleared out.  `cur` should always be `None` at
+        // the point that this function is called, but we have to pass ownership of the reference
+        // into the function to prove the lifetimes around access to it are valid.
+        let mut backtrack = |cur: &mut Option<Arc<Self>>, parent: &mut Option<Arc<Self>>| {
+            debug_assert!(cur.is_none());
+            while let Some(mut parent_arc) = parent.take() {
+                let parent_inner = Arc::get_mut(&mut parent_arc)
+                    .expect("only `Arc`s set by `Arc::make_mut` can be backtrack parents");
+                let Self::Binary { op: _, lhs, rhs } = parent_inner else {
+                    panic!("internal logic error: backtrack parents must always be `Binary`");
+                };
+                // During a backtrack, the `lhs` is always fully visited.  The `rhs` might not be.
+                if Arc::ptr_eq(rhs, &NULL) {
+                    // `rhs` is visited; let `parent_arc` drop and go up a level (if there is one).
+                    *parent =
+                        (!Arc::ptr_eq(lhs, &NULL)).then(|| mem::replace(lhs, Arc::clone(&NULL)));
+                } else {
+                    // `rhs` isn't visited; put ourselves back as the parent, and return the `rhs`
+                    // for iteration.
+                    *cur = Some(mem::replace(rhs, Arc::clone(&NULL)));
+                    *parent = Some(parent_arc);
+                    return;
+                }
+            }
+            // If we get here, we've exhausted the whole `cur` tree, so if there's any remaining
+            // `rhs` from the root, swap to it.
+            *cur = root_rhs.take();
+        };
+
+        // Walk down the left edges of the current tree until we reach something that can either
+        // drop non-recursively, or isn't eligible to drop.  Drop our reference to it, and then walk
+        // back up the tree to the nearest `rhs` edge that hasn't been taken yet.
+        // At that point
+        while let Some(mut cur_arc) = cur.take() {
+            // This `strong_count`/`make_mut` form is imperfect and if there are `Weak` pointers, it
+            // might cause us to do a fairly cheap extra Clone+Drop (if a racing `Weak` upgrades to
+            // an `Arc` between the count and the `make_mut`), or make a new extra `Arc` allocation
+            // (otherwise).  However, we don't expect any `Weak`s to exist, and if they do, this
+            // should still be safe, just a little less efficient.
+            //
+            // We have to mutate the inner `cur` both to clear out the recursive items, and to
+            // (temporarily) use its `lhs` space as a storage location for a linked list of back
+            // refs through the parents.
+            if Arc::strong_count(&cur_arc) > 1 {
+                // `cur_arc` isn't eligible to drop because of other references.  We drop our copy
+                // by letting it go out of scope, and continue.
+                backtrack(&mut cur, &mut cur_parent);
+                continue;
+            }
+            let cur_inner = Arc::make_mut(&mut cur_arc);
+
+            match cur_inner {
+                Self::Symbol(_) | Self::Value(_) => {
+                    // `cur_arc`/`cur_inner` can drop without risking recursion because it's a base
+                    // case.  It drops simply by going out of scope.
+                    backtrack(&mut cur, &mut cur_parent);
+                }
+                Self::Unary { op: _, expr } => {
+                    // This is like "contracting" the edge through a `Unary`; we put a null object
+                    // into the actual `Unary`, let `cur_inner` drop (so guaranteed one level of
+                    // recursion), and pretend its parent node pointed directly to its child.
+                    cur = Some(mem::replace(expr, Arc::clone(&NULL)));
+                }
+                Self::Binary { op: _, lhs, rhs: _ } => {
+                    // `parent` is the parent of this node; we store a backref in `lhs` so we can
+                    // walk back up later.
+                    let parent = cur_parent.take().unwrap_or_else(|| Arc::clone(&NULL));
+                    cur = Some(mem::replace(lhs, parent));
+                    cur_parent = Some(cur_arc);
+                }
+            }
+        }
+    }
 }
 
 /// Value type, can be integer, real or complex number
