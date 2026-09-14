@@ -2359,6 +2359,7 @@ dependencies = [
  "pyo3",
  "qiskit-circuit",
  "qiskit-circuit-library",
+ "qiskit-mir",
  "qiskit-quantum-info",
  "qiskit-transpiler",
  "qiskit-util",
@@ -2438,6 +2439,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "qiskit-mir"
+version = "2.6.0-dev"
+
+[[package]]
 name = "qiskit-providers"
 version = "2.6.0-dev"
 dependencies = [
@@ -2464,6 +2469,7 @@ dependencies = [
  "qiskit-cext-vtable",
  "qiskit-circuit",
  "qiskit-circuit-library",
+ "qiskit-mir",
  "qiskit-qasm2",
  "qiskit-qasm3",
  "qiskit-qpy",

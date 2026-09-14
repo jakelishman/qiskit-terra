@@ -144,6 +144,7 @@ pub fn qk_import(py: Python) -> PyResult<()> {
         (&QK_FFI_CIRCUIT, "QK_FFI_CIRCUIT"),
         (&QK_FFI_TRANSPILE, "QK_FFI_TRANSPILE"),
         (&QK_FFI_QI, "QK_FFI_QI"),
+        (&QK_FFI_MIR, "QK_FFI_MIR"),
     ];
     for (lock, name) in capsules {
         // This is a lazy approximation of `get_or_try_init`, which isn't stable in Rust 1.80.  If
